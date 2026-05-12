@@ -1,0 +1,30 @@
+# NOTE: PostgreSQL is installed via Homebrew on this machine (brew services start postgresql@16)
+# This docker-compose is provided for teams using Docker. Use whichever suits your setup.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rpe_supply_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rpe_user
+      POSTGRES_PASSWORD: rpe_pass
+      POSTGRES_DB: rpe_supply
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: rpe_supply_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@rpegear.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
