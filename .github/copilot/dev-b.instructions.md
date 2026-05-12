@@ -3,10 +3,70 @@ description: Instructions for Dev B — owns Suppliers and AP Ledger sections (f
 applyTo: "**"
 ---
 
-# Dev B — Section Guide
+# Dev B — Section Guide (Windows)
 
 You own full vertical slices for your sections: **backend controller + route + frontend page** together.  
 Read `copilot-instructions.md` for shared rules and invariants first.
+
+> **Dev B is on Windows.** Use PowerShell or Git Bash for all commands below.
+
+---
+
+## One-Time Setup (Windows)
+
+**1 — Install prerequisites** (skip if already installed):
+- [Node.js LTS](https://nodejs.org) — download and run the installer
+- [Git for Windows](https://git-scm.com/download/win) — includes Git Bash
+- [PostgreSQL 16](https://www.postgresql.org/download/windows/) — use the installer, set password `rpe_pass` during setup, keep default port 5432
+
+**2 — Clone the repo** (PowerShell or Git Bash):
+```powershell
+git clone https://github.com/Mazen9920/rpe-chain.git "RPE supply"
+cd "RPE supply"
+```
+
+**3 — Create the database** (open pgAdmin or run in PowerShell):
+```powershell
+psql -U postgres -c "CREATE USER rpe_user WITH PASSWORD 'rpe_pass';"
+psql -U postgres -c "CREATE DATABASE rpe_supply OWNER rpe_user;"
+psql -U postgres -c "ALTER USER rpe_user CREATEDB;"
+```
+> If `psql` is not in PATH, find it at `C:\Program Files\PostgreSQL\16\bin\psql.exe`  
+> Or add it to PATH: System → Environment Variables → add `C:\Program Files\PostgreSQL\16\bin`
+
+**4 — Backend setup:**
+```powershell
+cd "RPE supply\backend"
+npm install
+copy .env.example .env
+npx prisma migrate dev
+node prisma/seed.js
+```
+
+**5 — Frontend setup:**
+```powershell
+cd "..\frontend"
+npm install
+```
+
+**6 — Create your branch:**
+```powershell
+cd ..
+git checkout -b section/suppliers
+```
+
+**Every session — start both servers (two separate PowerShell windows):**
+```powershell
+# Window 1 — Backend
+cd "RPE supply\backend"
+npm run dev          # → http://localhost:3000
+
+# Window 2 — Frontend
+cd "RPE supply\frontend"
+npm run dev          # → http://localhost:8080
+```
+
+Open **http://localhost:8080** → login: `admin@rpechain.com` / `Admin@123`
 
 ---
 
@@ -144,14 +204,14 @@ const { data = [], isLoading } = useQuery({
 });
 ```
 
-## Commands
-```bash
+## Commands (Windows PowerShell)
+```powershell
 # Backend
-npm run dev                         # nodemon
-npx prisma studio                   # browse DB
-npx prisma migrate dev --name <x>   # new migration (only if schema changed)
+npm run dev                              # nodemon
+npx prisma studio                        # browse DB in browser
+npx prisma migrate dev --name <name>     # new migration (only if schema changed)
 
 # Frontend
-npm run dev                         # Vite dev server
-npx tsc --noEmit                    # type check — must be 0 errors before PR
+npm run dev                              # Vite dev server → http://localhost:8080
+npx tsc --noEmit                         # type check — must be 0 errors before PR
 ```
