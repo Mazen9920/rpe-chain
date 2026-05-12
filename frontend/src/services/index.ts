@@ -15,6 +15,10 @@ export const supplierService = {
   create: (data: object) => api.post('/suppliers', data).then((r) => r.data),
   update: (id: string, data: object) => api.put(`/suppliers/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/suppliers/${id}`),
+  recordPerformance: (id: string, data: object) =>
+    api.post(`/suppliers/${id}/performance`, data).then((r) => r.data),
+  getPerformance: (id: string) =>
+    api.get(`/suppliers/${id}/performance`).then((r) => r.data),
 };
 
 export const purchaseOrderService = {
