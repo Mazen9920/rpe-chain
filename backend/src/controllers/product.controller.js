@@ -1,4 +1,5 @@
 const prisma = require('../lib/prisma');
+const { logEvent } = require('../services/audit.service');
 
 /**
  * Product controller for the new (master-plan-aligned) schema.
@@ -66,21 +67,51 @@ async function getById(req, res) {
 
 async function create(req, res) {
   const product = await prisma.product.create({ data: req.body });
+  await logEvent({
+    eventType: 'PRODUCT_CREATED',
+    entityType: 'Product',
+    entityId: product.id,
+    actorId: req.user?.id,
+    payload: { after: product },
+    sourceIp: req.ip,
+  });
   res.status(201).json(product);
 }
 
 async function update(req, res) {
+  const before = await prisma.product.findUnique({ where: { id: req.params.id } });
+  if (!before || before.deletedAt) return res.status(404).json({ error: 'Product not found' });
+
   const product = await prisma.product.update({
     where: { id: req.params.id },
     data: { ...req.body, version: { increment: 1 } },
+  });
+  await logEvent({
+    eventType: 'PRODUCT_UPDATED',
+    entityType: 'Product',
+    entityId: product.id,
+    actorId: req.user?.id,
+    payload: { before, after: product },
+    sourceIp: req.ip,
   });
   res.json(product);
 }
 
 async function remove(req, res) {
-  await prisma.product.update({
+  const before = await prisma.product.findUnique({ where: { id: req.params.id } });
+  if (!before || before.deletedAt) return res.status(404).json({ error: 'Product not found' });
+
+  const product = await prisma.product.update({
     where: { id: req.params.id },
     data: { isActive: false, deletedAt: new Date() },
+  });
+  await logEvent({
+    eventType: 'PRODUCT_DELETED',
+    entityType: 'Product',
+    entityId: product.id,
+    actorId: req.user?.id,
+    payload: { before, after: product },
+    sourceIp: req.ip,
   });
   res.status(204).send();
 }

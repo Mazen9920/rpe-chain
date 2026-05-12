@@ -34,6 +34,11 @@ export const shipmentService = {
 
 export const inventoryService = {
   warehouses: () => api.get('/inventory/warehouses').then((r) => r.data),
+  getWarehouse: (id: string) => api.get(`/inventory/warehouses/${id}`).then((r) => r.data),
+  createWarehouse: (data: object) => api.post('/inventory/warehouses', data).then((r) => r.data),
+  updateWarehouse: (id: string, data: object) =>
+    api.put(`/inventory/warehouses/${id}`, data).then((r) => r.data),
+  deactivateWarehouse: (id: string) => api.delete(`/inventory/warehouses/${id}`),
   stockLevels: (params?: { warehouseId?: string; productId?: string }) =>
     api.get('/inventory/stock-levels', { params }).then((r) => r.data),
   lots: (params?: { expiringInDays?: number; productId?: string }) =>

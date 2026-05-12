@@ -1,73 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const prisma = require('../lib/prisma');
+const ctrl = require('../controllers/inventory.controller');
 const { authenticate } = require('../middleware/auth.middleware');
-const { getInventoryValuation } = require('../services/fifo.service');
+const { requireRole } = require('../middleware/auth.middleware');
 
 router.use(authenticate);
 
-// List warehouses
-router.get('/warehouses', async (_req, res) => {
-  const warehouses = await prisma.warehouse.findMany({ where: { isActive: true } });
-  res.json(warehouses);
-});
+router.get('/warehouses', ctrl.listWarehouses);
+router.get('/warehouses/:id', ctrl.getWarehouse);
+router.post('/warehouses', requireRole('ADMIN', 'WAREHOUSE'), ctrl.createWarehouse);
+router.put('/warehouses/:id', requireRole('ADMIN', 'WAREHOUSE'), ctrl.updateWarehouse);
+router.delete('/warehouses/:id', requireRole('ADMIN', 'WAREHOUSE'), ctrl.deactivateWarehouse);
 
-// Stock levels (optionally filtered by warehouse)
-router.get('/stock-levels', async (req, res) => {
-  const { warehouseId, productId } = req.query;
-  const where = {};
-  if (warehouseId) where.warehouseId = warehouseId;
-  if (productId) where.productId = productId;
-  const levels = await prisma.stockLevel.findMany({
-    where,
-    include: {
-      product: { select: { id: true, sku: true, name: true, uom: true, reorderPoint: true } },
-      warehouse: { select: { id: true, code: true, name: true } },
-    },
-  });
-  res.json(levels);
-});
+router.get('/stock-levels', ctrl.listStockLevels);
 
-// Lots — full traceability list, sortable by expiry
-router.get('/lots', async (req, res) => {
-  const { expiringInDays } = req.query;
-  const where = { qtyRemaining: { gt: 0 } };
-  if (expiringInDays) {
-    const cutoff = new Date(Date.now() + Number(expiringInDays) * 24 * 60 * 60 * 1000);
-    where.expiryDate = { lte: cutoff };
-  }
-  const lots = await prisma.lot.findMany({
-    where,
-    include: { product: { select: { id: true, sku: true, name: true } } },
-    orderBy: { expiryDate: 'asc' },
-  });
-  res.json(lots);
-});
+router.get('/lots', ctrl.listLots);
 
-// FIFO inventory valuation
-router.get('/valuation', async (req, res) => {
-  const { warehouseId, productId } = req.query;
-  const result = await getInventoryValuation({ warehouseId, productId });
-  res.json(result);
-});
+router.get('/valuation', ctrl.getValuation);
 
-// Recent stock movements
-router.get('/movements', async (req, res) => {
-  const { productId, warehouseId, limit = 50 } = req.query;
-  const where = {};
-  if (productId) where.productId = productId;
-  if (warehouseId) where.warehouseId = warehouseId;
-  const movements = await prisma.stockMovement.findMany({
-    where,
-    take: Number(limit),
-    orderBy: { createdAt: 'desc' },
-    include: {
-      product: { select: { id: true, sku: true, name: true } },
-      warehouse: { select: { id: true, code: true } },
-      lot: { select: { id: true, lotNumber: true } },
-    },
-  });
-  res.json(movements);
-});
+router.get('/movements', ctrl.listMovements);
 
 module.exports = router;
