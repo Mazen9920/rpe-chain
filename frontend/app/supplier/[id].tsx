@@ -20,7 +20,27 @@ import {
 } from 'react-native-paper';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import Svg, { Polyline, Circle } from 'react-native-svg';
 import { supplierService } from '../../src/services';
+
+function Sparkline({ values, color = '#1976d2', width = 220, height = 40 }: { values: number[]; color?: string; width?: number; height?: number }) {
+  if (values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const step = width / (values.length - 1);
+  const points = values
+    .map((v, i) => `${(i * step).toFixed(1)},${(height - ((v - min) / range) * height).toFixed(1)}`)
+    .join(' ');
+  const lastX = (values.length - 1) * step;
+  const lastY = height - ((values[values.length - 1] - min) / range) * height;
+  return (
+    <Svg width={width} height={height}>
+      <Polyline points={points} fill="none" stroke={color} strokeWidth={2} />
+      <Circle cx={lastX} cy={lastY} r={3} fill={color} />
+    </Svg>
+  );
+}
 
 type Tab = 'overview' | 'products' | 'performance';
 
@@ -276,7 +296,23 @@ export default function SupplierDetailScreen() {
               {supplier.performance?.length === 0 ? (
                 <Text style={[styles.muted, { padding: 16 }]}>No performance records yet.</Text>
               ) : (
-                <DataTable>
+                <>
+                  {(() => {
+                    const series = (supplier.performance ?? [])
+                      .slice(0, 12)
+                      .reverse()
+                      .map((p: any) => (p.onTimeRate != null ? Number(p.onTimeRate) : null))
+                      .filter((v: number | null): v is number => v != null);
+                    return series.length >= 2 ? (
+                      <View style={styles.sparkWrap}>
+                        <Text variant="bodySmall" style={styles.muted}>
+                          On-time rate trend
+                        </Text>
+                        <Sparkline values={series} color={theme.colors.primary} />
+                      </View>
+                    ) : null;
+                  })()}
+                  <DataTable>
                   <DataTable.Header>
                     <DataTable.Title>Period</DataTable.Title>
                     <DataTable.Title numeric>On-Time</DataTable.Title>
@@ -303,6 +339,7 @@ export default function SupplierDetailScreen() {
                     </DataTable.Row>
                   ))}
                 </DataTable>
+                </>
               )}
             </Surface>
           </>
@@ -464,4 +501,5 @@ const styles = StyleSheet.create({
   modal: { margin: 16, padding: 20, borderRadius: 8, maxHeight: '90%' },
   input: { marginBottom: 8 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
+  sparkWrap: { padding: 16, alignItems: 'flex-start' },
 });
