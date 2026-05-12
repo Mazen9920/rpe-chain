@@ -7,82 +7,111 @@ applyTo: "**"
 
 A supply chain management system for **RPE Gear** (Respiratory Protective Equipment), built around an **event-sourced FIFO cost ledger** per the *RPE Chain Supply OS Master Plan v1.0*.
 
-- React 18 + Vite web frontend (runs at localhost:8080)
-- Node.js + Express + Prisma + PostgreSQL backend
-- 6-role RBAC: `ADMIN`, `PROCUREMENT`, `WAREHOUSE`, `FINANCE`, `SALES`, `READ_ONLY`
-- Append-only `StockMovement`, `CostLayer`, `CogsPosting`, `EventLog`
+- **Frontend**: React 18 + Vite 5 + TypeScript + Tailwind CSS → `http://localhost:8080`
+- **Backend**: Node.js + Express + Prisma + PostgreSQL → `http://localhost:3000`
+- **6-role RBAC**: `ADMIN`, `PROCUREMENT`, `WAREHOUSE`, `FINANCE`, `SALES`, `READ_ONLY`
+- **Append-only ledgers**: `StockMovement`, `CostLayer`, `CogsPosting`, `EventLog`
 
 ## Repository Layout
 ```
 RPE supply/
-├── backend/                  ← Node.js + Express + Prisma (Developer 1)
+├── backend/
 │   ├── prisma/schema.prisma
 │   ├── src/services/
-│   │   ├── fifo.service.js   ← createCostLayer, depleteFifo, reverseFifo, getInventoryValuation
-│   │   ├── stock.service.js  ← recordMovement (append-only + snapshot)
-│   │   └── audit.service.js  ← EventLog writer
+│   │   ├── fifo.service.js    ← FIFO engine (never bypass)
+│   │   ├── stock.service.js   ← recordMovement (append-only)
+│   │   └── audit.service.js   ← EventLog writer
 │   └── src/controllers/, routes/, middleware/
-├── frontend/                 ← React Native Expo app (Developer 2)
+├── frontend/
+│   └── src/pages/, components/, services/, stores/
 └── .github/copilot/
+    ├── copilot-instructions.md   ← this file (shared)
+    ├── dev-a.instructions.md     ← Dev A's sections
+    └── dev-b.instructions.md     ← Dev B's sections
 ```
 
-## 10 Functional Modules (Master Plan)
-1. Inventory & Lots (multi-warehouse, expiry, soft-delete)
-2. Suppliers (performance, lead-time)
-3. Procurement (POs, goods receipts, 3-way match)
-4. AP Ledger (invoices, payments, FX)
-5. Fulfillment (sales orders, shipments, tracking)
-6. FIFO Cost Engine (layers, depletion, landed cost, COGS)
-7. Forecasting *(Phase 4 — not built yet)*
-8. Alerts (low stock, expiry)
-9. Reporting (valuation, COGS, margin)
-10. Integrations *(Phase 5)*
+---
+
+## Development Model — Section-by-Section
+
+Each developer owns **full vertical slices** — both the backend API and the frontend page for their assigned section. Sections are built one at a time in phases; both devs work in parallel on their section within the same phase.
+
+```
+Phase 1 — DONE ✅
+  Foundation: Auth, FIFO engine, schema, Dashboard
+
+Section 1 — IN PROGRESS (current)
+  Dev A → Inventory module
+  Dev B → Suppliers module
+
+Section 2 — next
+  Dev A → Procurement (Purchase Orders + Goods Receipt)
+  Dev B → AP Ledger (Invoices + Payments)
+
+Section 3
+  Dev A → Fulfillment (Sales Orders + Shipments)
+  Dev B → Alerts + Reorder Recommendations
+
+Section 4
+  Dev A → Reporting (Valuation, COGS, Margin)
+  Dev B → Forecasting (Demand forecast view)
+```
+
+### Section ownership rules
+- Each dev builds both the **Express controller/route** AND the **React page** for their section.
+- Schema changes that affect another dev's section → discuss before migrating.
+- Shared services (`fifo.service`, `stock.service`, `audit.service`) → do not modify without coordinating. Open a PR and tag the other dev.
+- One section must be **merged to `main` before the next section begins** — keeps the base stable.
+
+---
 
 ## Core Invariants — DO NOT VIOLATE
-- **Append-only ledgers**: never `UPDATE`/`DELETE` rows in `StockMovement`, `CogsPosting`, `EventLog`. `CostLayer.qtyRemaining` is the *only* mutable field on cost layers. Corrections = new offsetting rows.
-- **FIFO depletion is atomic**: always go through `fifoService.depleteFifo()`. It uses `prisma.$transaction` + `SELECT ... FOR UPDATE` row locks. Never compute COGS or decrement layers ad-hoc.
+- **Append-only ledgers**: never `UPDATE`/`DELETE` rows in `StockMovement`, `CogsPosting`, `EventLog`. `CostLayer.qtyRemaining` is the *only* mutable field on cost layers.
+- **FIFO depletion is atomic**: always use `fifoService.depleteFifo()`. Never decrement layers manually.
 - **StockLevel is a snapshot**: only `stockService.recordMovement()` may write to it.
-- **Soft-deletes via `deletedAt`** on Product, Supplier, Warehouse, Lot. Always filter `deletedAt: null` in list queries.
-- **Decimal money**: monetary fields are `Decimal`. Use `.toNumber()` or stay in `Prisma.Decimal`.
-- **Audit important events**: write `EventLog` on PO receive, shipment, payment, role change, delete.
+- **Soft-deletes via `deletedAt`** on Product, Supplier, Warehouse, Lot — always filter `deletedAt: null`.
+- **Decimal money**: `Decimal` in Prisma, `.toNumber()` only at JSON boundary.
+- **Audit**: write `EventLog` on PO receive, shipment, payment, role change, delete.
 
 ## Shared Conventions
 - UUIDs for all PKs
-- ISO 8601 strings for dates in JSON
-- API errors: `{ "error": "message" }` with proper HTTP status
-- `.env` never committed
-- JWT bearer in `Authorization: Bearer <token>` header
+- ISO 8601 strings for dates in API
+- API errors: `{ "error": "message" }` with correct HTTP status
+- `.env` never committed — use `.env.example`
+- JWT: `Authorization: Bearer <token>`
+- Frontend calls go through `src/services/index.ts` only — no inline axios in components
 
-## Database (PostgreSQL — Homebrew local)
+## Database (PostgreSQL — Homebrew)
 ```bash
 brew services start postgresql@16
-# user: rpe_user / pass: rpe_pass / db: rpe_supply  (CREATEDB granted for shadow DB)
+# user: rpe_user / pass: rpe_pass / db: rpe_supply
 ```
 
 ## Quick Start
 ```bash
-# Backend
-cd backend && cp .env.example .env && npm install
-npx prisma migrate dev
-node prisma/seed.js
-npm run dev          # → http://localhost:3000
+# Backend (Terminal 1)
+cd backend && npm install && cp .env.example .env
+npx prisma migrate dev && node prisma/seed.js
+npm run dev             # → http://localhost:3000
 
-# Frontend
+# Frontend (Terminal 2)
 cd frontend && npm install
-npx expo start
+npm run dev             # → http://localhost:8080
 ```
 
-## Seed Login
-- `admin@rpechain.com` / `Admin@123` (ADMIN)
-- `procurement@rpechain.com` / `Admin@123` (PROCUREMENT)
-- `warehouse@rpechain.com` / `Admin@123` (WAREHOUSE)
-- `finance@rpechain.com` / `Admin@123` (FINANCE)
+## Seed Logins
+| Email | Password | Role |
+|-------|----------|------|
+| admin@rpechain.com | Admin@123 | ADMIN |
+| procurement@rpechain.com | Admin@123 | PROCUREMENT |
+| warehouse@rpechain.com | Admin@123 | WAREHOUSE |
+| finance@rpechain.com | Admin@123 | FINANCE |
 
-## Two-Developer Split
-| | Developer 1 | Developer 2 |
-|-|------------|------------|
-| **Domain** | `backend/` | `frontend/` |
-| **Agent file** | `backend-agent.instructions.md` | `frontend-agent.instructions.md` |
-| **Owns** | schema, services, FIFO engine, controllers, migrations, seeds | pages, routing, state, API client, Tailwind UI |
-
-Cross-cutting changes (new endpoint + UI consumer) → coordinate via the API contract in `backend-agent.instructions.md`.
+## Git Workflow
+```bash
+git pull origin main
+git checkout -b section/inventory    # or section/suppliers etc.
+# build your section
+git push origin section/inventory
+# open PR → merge to main → next section begins
+```
