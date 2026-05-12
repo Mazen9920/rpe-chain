@@ -5,13 +5,16 @@ const { authenticate, requireRole } = require('../middleware/auth.middleware');
 
 router.use(authenticate);
 
-router.get('/', ctrl.list);
-router.get('/:id', ctrl.getById);
-router.post('/', ctrl.create);
-router.put('/:id', ctrl.update);
-router.delete('/:id', ctrl.remove);
+const READ_ROLES = ['ADMIN', 'PROCUREMENT', 'FINANCE', 'SALES', 'READ_ONLY'];
+const WRITE_ROLES = ['ADMIN', 'PROCUREMENT'];
 
-router.post('/:id/performance', requireRole('ADMIN', 'PROCUREMENT'), ctrl.recordPerformance);
-router.get('/:id/performance', ctrl.getPerformance);
+router.get('/', requireRole(...READ_ROLES), ctrl.list);
+router.get('/:id', requireRole(...READ_ROLES), ctrl.getById);
+router.post('/', requireRole(...WRITE_ROLES), ctrl.create);
+router.put('/:id', requireRole(...WRITE_ROLES), ctrl.update);
+router.delete('/:id', requireRole(...WRITE_ROLES), ctrl.remove);
+
+router.get('/:id/performance', requireRole(...READ_ROLES), ctrl.getPerformance);
+router.post('/:id/performance', requireRole(...WRITE_ROLES), ctrl.recordPerformance);
 
 module.exports = router;

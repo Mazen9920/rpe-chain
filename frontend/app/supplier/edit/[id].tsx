@@ -1,19 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, View, StyleSheet } from 'react-native';
 import {
   TextInput,
   Button,
   Text,
   HelperText,
+  ActivityIndicator,
   SegmentedButtons,
   Snackbar,
 } from 'react-native-paper';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { supplierService } from '../../src/services';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { supplierService } from '../../../src/services';
 
 interface SupplierForm {
-  code: string;
   name: string;
   legalName: string;
   taxId: string;
@@ -27,34 +27,45 @@ interface SupplierForm {
   riskRating: '' | 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
-const INITIAL: SupplierForm = {
-  code: '',
-  name: '',
-  legalName: '',
-  taxId: '',
-  currency: 'USD',
-  country: '',
-  leadTimeDays: '7',
-  paymentTerms: 'NET30',
-  primaryContact: '',
-  email: '',
-  phone: '',
-  riskRating: '',
-};
-
-export default function NewSupplierScreen() {
+export default function EditSupplierScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<SupplierForm>(INITIAL);
+
+  const { data: supplier, isLoading } = useQuery({
+    queryKey: ['supplier', id],
+    queryFn: () => supplierService.getById(id),
+    enabled: !!id,
+  });
+
+  const [form, setForm] = useState<SupplierForm | null>(null);
   const [errors, setErrors] = useState<Partial<Record<keyof SupplierForm, string>>>({});
   const [apiError, setApiError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (supplier && !form) {
+      setForm({
+        name: supplier.name ?? '',
+        legalName: supplier.legalName ?? '',
+        taxId: supplier.taxId ?? '',
+        currency: supplier.currency ?? 'USD',
+        country: supplier.country ?? '',
+        leadTimeDays: String(supplier.leadTimeDays ?? 7),
+        paymentTerms: supplier.paymentTerms ?? 'NET30',
+        primaryContact: supplier.primaryContact ?? '',
+        email: supplier.email ?? '',
+        phone: supplier.phone ?? '',
+        riskRating: (supplier.riskRating ?? '') as SupplierForm['riskRating'],
+      });
+    }
+  }, [supplier, form]);
+
   const set = (key: keyof SupplierForm) => (value: string) =>
-    setForm((prev) => ({ ...prev, [key]: value as any }));
+    setForm((prev) => (prev ? { ...prev, [key]: value as any } : prev));
 
   const validate = (): boolean => {
+    if (!form) return false;
     const e: Partial<Record<keyof SupplierForm, string>> = {};
-    if (!form.code.trim()) e.code = 'Code is required';
     if (!form.name.trim()) e.name = 'Name is required';
     if (!form.country.trim()) e.country = 'Country is required';
     const lead = Number(form.leadTimeDays);
@@ -71,27 +82,27 @@ export default function NewSupplierScreen() {
   const mutation = useMutation({
     mutationFn: () => {
       const payload: any = {
-        code: form.code.trim(),
-        name: form.name.trim(),
-        legalName: form.legalName.trim() || undefined,
-        taxId: form.taxId.trim() || undefined,
-        currency: form.currency.trim() || 'USD',
-        country: form.country.trim(),
-        leadTimeDays: Number(form.leadTimeDays),
-        paymentTerms: form.paymentTerms.trim() || 'NET30',
-        primaryContact: form.primaryContact.trim() || undefined,
-        email: form.email.trim() || undefined,
-        phone: form.phone.trim() || undefined,
+        name: form!.name.trim(),
+        legalName: form!.legalName.trim() || null,
+        taxId: form!.taxId.trim() || null,
+        currency: form!.currency.trim() || 'USD',
+        country: form!.country.trim(),
+        leadTimeDays: Number(form!.leadTimeDays),
+        paymentTerms: form!.paymentTerms.trim() || 'NET30',
+        primaryContact: form!.primaryContact.trim() || null,
+        email: form!.email.trim() || null,
+        phone: form!.phone.trim() || null,
       };
-      if (form.riskRating) payload.riskRating = form.riskRating;
-      return supplierService.create(payload);
+      if (form!.riskRating) payload.riskRating = form!.riskRating;
+      return supplierService.update(id, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      queryClient.invalidateQueries({ queryKey: ['supplier', id] });
       router.back();
     },
     onError: (err: any) => {
-      setApiError(err?.response?.data?.error ?? 'Failed to create supplier');
+      setApiError(err?.response?.data?.error ?? 'Failed to update supplier');
     },
   });
 
@@ -101,22 +112,19 @@ export default function NewSupplierScreen() {
     mutation.mutate();
   };
 
+  if (isLoading || !form) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text variant="headlineSmall" style={styles.title}>
-        New Supplier
+        Edit Supplier
       </Text>
-
-      <TextInput
-        label="Code *"
-        value={form.code}
-        onChangeText={set('code')}
-        mode="outlined"
-        style={styles.input}
-        autoCapitalize="characters"
-        error={!!errors.code}
-      />
-      <HelperText type="error" visible={!!errors.code}>{errors.code}</HelperText>
 
       <TextInput
         label="Name *"
@@ -213,7 +221,7 @@ export default function NewSupplierScreen() {
         style={styles.button}
         contentStyle={styles.buttonContent}
       >
-        Create Supplier
+        Save Changes
       </Button>
       <Button mode="text" onPress={() => router.back()} disabled={mutation.isPending}>
         Cancel
@@ -229,6 +237,7 @@ export default function NewSupplierScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   title: { marginBottom: 16 },
   input: { marginBottom: 4 },
   label: { marginBottom: 6, marginTop: 8, opacity: 0.6 },

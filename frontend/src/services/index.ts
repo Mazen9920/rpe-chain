@@ -9,16 +9,32 @@ export const productService = {
   delete: (id: string) => api.delete(`/products/${id}`),
 };
 
+export interface SupplierListParams {
+  search?: string;
+  country?: string;
+  currency?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SupplierPerformanceQuery {
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export const supplierService = {
-  list: () => api.get('/suppliers').then((r) => r.data),
+  list: (params?: SupplierListParams) =>
+    api.get('/suppliers', { params }).then((r) => r.data as { data: any[]; total: number }),
   getById: (id: string) => api.get(`/suppliers/${id}`).then((r) => r.data),
   create: (data: object) => api.post('/suppliers', data).then((r) => r.data),
   update: (id: string, data: object) => api.put(`/suppliers/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/suppliers/${id}`),
   recordPerformance: (id: string, data: object) =>
     api.post(`/suppliers/${id}/performance`, data).then((r) => r.data),
-  getPerformance: (id: string) =>
-    api.get(`/suppliers/${id}/performance`).then((r) => r.data),
+  getPerformance: (id: string, params?: SupplierPerformanceQuery) =>
+    api.get(`/suppliers/${id}/performance`, { params }).then((r) => r.data),
 };
 
 export const purchaseOrderService = {
