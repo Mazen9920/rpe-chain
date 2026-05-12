@@ -22,10 +22,6 @@ export const purchaseOrderService = {
   getById: (id: string) => api.get(`/purchase-orders/${id}`).then((r) => r.data),
   create: (data: object) => api.post('/purchase-orders', data).then((r) => r.data),
   update: (id: string, data: object) => api.put(`/purchase-orders/${id}`, data).then((r) => r.data),
-  updateStatus: (id: string, status: string) =>
-    api.patch(`/purchase-orders/${id}/status`, { status }).then((r) => r.data),
-  /** Receive goods — creates Lot + CostLayer + StockMovement via FIFO engine.
-   *  Body: { warehouseId, lines: [{ poLineId, qty, lotNumber, expiry?, unitCost }] } */
   receive: (id: string, data: object) =>
     api.post(`/purchase-orders/${id}/receive`, data).then((r) => r.data),
 };
@@ -33,11 +29,7 @@ export const purchaseOrderService = {
 export const shipmentService = {
   list: (params?: object) => api.get('/shipments', { params }).then((r) => r.data),
   getById: (id: string) => api.get(`/shipments/${id}`).then((r) => r.data),
-  /** Create shipment — triggers FIFO depletion.
-   *  Body: { warehouseId, salesOrderId, lines: [{ productId, qty }] } */
   create: (data: object) => api.post('/shipments', data).then((r) => r.data),
-  updateStatus: (id: string, data: object) =>
-    api.patch(`/shipments/${id}/status`, data).then((r) => r.data),
 };
 
 export const inventoryService = {

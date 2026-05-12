@@ -7,7 +7,7 @@ applyTo: "**"
 
 A supply chain management system for **RPE Gear** (Respiratory Protective Equipment), built around an **event-sourced FIFO cost ledger** per the *RPE Chain Supply OS Master Plan v1.0*.
 
-- Mobile-first React Native (Expo) frontend
+- React 18 + Vite web frontend (runs at localhost:8080)
 - Node.js + Express + Prisma + PostgreSQL backend
 - 6-role RBAC: `ADMIN`, `PROCUREMENT`, `WAREHOUSE`, `FINANCE`, `SALES`, `READ_ONLY`
 - Append-only `StockMovement`, `CostLayer`, `CogsPosting`, `EventLog`
@@ -83,6 +83,6 @@ npx expo start
 |-|------------|------------|
 | **Domain** | `backend/` | `frontend/` |
 | **Agent file** | `backend-agent.instructions.md` | `frontend-agent.instructions.md` |
-| **Owns** | schema, services, FIFO engine, controllers, migrations, seeds | screens, navigation, state, API client, UI |
+| **Owns** | schema, services, FIFO engine, controllers, migrations, seeds | pages, routing, state, API client, Tailwind UI |
 
 Cross-cutting changes (new endpoint + UI consumer) → coordinate via the API contract in `backend-agent.instructions.md`.
