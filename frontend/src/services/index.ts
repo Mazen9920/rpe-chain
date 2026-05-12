@@ -1,5 +1,11 @@
 import api from '../lib/api';
 
+export const categoryService = {
+  list: () => api.get('/categories').then((r) => r.data),
+  create: (data: object) => api.post('/categories', data).then((r) => r.data),
+  update: (id: string, data: object) => api.put(`/categories/${id}`, data).then((r) => r.data),
+};
+
 export const productService = {
   list: (params?: object) => api.get('/products', { params }).then((r) => r.data),
   lowStock: () => api.get('/products/low-stock').then((r) => r.data),
@@ -47,6 +53,7 @@ export const inventoryService = {
     api.get('/inventory/valuation', { params }).then((r) => r.data),
   movements: (params?: { productId?: string; limit?: number }) =>
     api.get('/inventory/movements', { params }).then((r) => r.data),
+  adjustStock: (data: object) => api.post('/inventory/adjustments', data).then((r) => r.data),
 };
 
 export const dashboardService = {

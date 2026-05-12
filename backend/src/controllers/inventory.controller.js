@@ -1,6 +1,7 @@
 const prisma = require('../lib/prisma');
 const { getInventoryValuation } = require('../services/fifo.service');
 const { logEvent } = require('../services/audit.service');
+const { recordMovement } = require('../services/stock.service');
 
 function pickWarehouseData(body) {
   return {
@@ -164,6 +165,40 @@ async function listMovements(req, res) {
   res.json(movements);
 }
 
+async function adjustStock(req, res) {
+  const { productId, warehouseId, lotId, qty, notes } = req.body;
+  const numericQty = Number(qty);
+
+  if (!productId || !warehouseId || !Number.isFinite(numericQty) || numericQty === 0) {
+    return res.status(400).json({ error: 'productId, warehouseId, and non-zero qty are required' });
+  }
+
+  try {
+    const movement = await recordMovement({
+      productId,
+      warehouseId,
+      lotId: lotId || null,
+      qty: numericQty,
+      reasonCode: 'ADJUSTMENT',
+      sourceDocType: 'MANUAL',
+      sourceDocId: `ADJ-${Date.now()}`,
+      operatorId: req.user?.id,
+      notes: notes || null,
+    });
+    await logEvent({
+      eventType: 'STOCK_ADJUSTED',
+      entityType: 'StockMovement',
+      entityId: movement.id,
+      actorId: req.user?.id,
+      payload: { productId, warehouseId, lotId: lotId || null, qty: numericQty, notes: notes || null },
+      sourceIp: req.ip,
+    });
+    res.status(201).json(movement);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to adjust stock' });
+  }
+}
+
 module.exports = {
   listWarehouses,
   getWarehouse,
@@ -174,4 +209,5 @@ module.exports = {
   listLots,
   getValuation,
   listMovements,
+  adjustStock,
 };

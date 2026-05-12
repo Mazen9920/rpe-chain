@@ -104,3 +104,11 @@ export interface WarehouseFormInput {
   address?: string | null;
   taxJurisdiction?: string | null;
 }
+
+export interface StockAdjustmentInput {
+  productId: string;
+  warehouseId: string;
+  lotId?: string | null;
+  qty: number;
+  notes?: string | null;
+}

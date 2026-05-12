@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Edit2, PackagePlus, Search } from 'lucide-react';
-import { productService } from '../../services';
+import { Edit2, PackagePlus, Search, Trash2 } from 'lucide-react';
+import { categoryService, productService } from '../../services';
 import type { Category, Product } from '../../types/inventory';
 import ProductFormSlideOver from './ProductFormSlideOver';
 
@@ -25,13 +25,10 @@ export default function ProductsTab() {
     queryFn: productService.list,
   });
 
-  const categories = useMemo(() => {
-    const map = new Map<string, Category>();
-    products.forEach((product) => {
-      if (product.category) map.set(product.category.id, product.category);
-    });
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [products]);
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ['categories'],
+    queryFn: categoryService.list,
+  });
 
   const filtered = products.filter((product) => {
     const term = search.toLowerCase();
@@ -49,6 +46,11 @@ export default function ProductsTab() {
     onError: (error) => setFormError(getErrorMessage(error)),
   });
 
+  const deactivateMutation = useMutation({
+    mutationFn: (id: string) => productService.delete(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
+  });
+
   const openCreate = () => {
     setEditingProduct(null);
     setFormError(null);
@@ -59,6 +61,11 @@ export default function ProductsTab() {
     setEditingProduct(product);
     setFormError(null);
     setFormOpen(true);
+  };
+
+  const deactivateProduct = (product: Product) => {
+    if (!confirm(`Deactivate ${product.name}?`)) return;
+    deactivateMutation.mutate(product.id);
   };
 
   return (
@@ -109,9 +116,14 @@ export default function ProductsTab() {
                       {product.isLowStock ? <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Low Stock</span> : <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">OK</span>}
                     </td>
                     <td className="px-5 py-3">
-                      <button onClick={() => openEdit(product)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                        <Edit2 size={13} /> Edit
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => openEdit(product)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                          <Edit2 size={13} /> Edit
+                        </button>
+                        <button onClick={() => deactivateProduct(product)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
+                          <Trash2 size={13} /> Deactivate
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

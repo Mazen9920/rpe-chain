@@ -19,5 +19,6 @@ router.get('/lots', ctrl.listLots);
 router.get('/valuation', ctrl.getValuation);
 
 router.get('/movements', ctrl.listMovements);
+router.post('/adjustments', requireRole('ADMIN', 'WAREHOUSE'), ctrl.adjustStock);
 
 module.exports = router;
