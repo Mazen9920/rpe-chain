@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { inventoryService } from '../../services';
 import type { Lot } from '../../types/inventory';
 
@@ -17,9 +17,20 @@ function expiryBadge(date?: string | null) {
 }
 
 export default function LotsTab() {
+  const queryClient = useQueryClient();
   const { data: lots = [], isLoading, isError } = useQuery<Lot[]>({
     queryKey: ['inventory', 'lots'],
     queryFn: () => inventoryService.lots(),
+  });
+
+  const updateQa = useMutation({
+    mutationFn: ({ id, qaStatus }: { id: string; qaStatus: string }) =>
+      inventoryService.updateLotQaStatus(id, { qaStatus }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'lots'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'movements'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'stock-levels'] });
+    },
   });
 
   return (
@@ -33,12 +44,12 @@ export default function LotsTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50">
-                {['Lot', 'Product', 'Received', 'Received Qty', 'Remaining', 'QA', 'Expiry'].map((heading) => <th key={heading} className="text-left px-5 py-3 text-slate-500 font-medium">{heading}</th>)}
+                {['Lot', 'Product', 'Received', 'Received Qty', 'Remaining', 'QA', 'Expiry', 'Actions'].map((heading) => <th key={heading} className="text-left px-5 py-3 text-slate-500 font-medium">{heading}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {isLoading ? Array.from({ length: 5 }).map((_, row) => <tr key={row}>{Array.from({ length: 7 }).map((_, cell) => <td key={cell} className="px-5 py-3"><div className="h-4 bg-slate-100 rounded animate-pulse" /></td>)}</tr>) : lots.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">No active lots found.</td></tr>
+              {isLoading ? Array.from({ length: 5 }).map((_, row) => <tr key={row}>{Array.from({ length: 8 }).map((_, cell) => <td key={cell} className="px-5 py-3"><div className="h-4 bg-slate-100 rounded animate-pulse" /></td>)}</tr>) : lots.length === 0 ? (
+                <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-500">No active lots found.</td></tr>
               ) : lots.map((lot) => (
                 <tr key={lot.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{lot.lotNumber}</td>
@@ -48,6 +59,15 @@ export default function LotsTab() {
                   <td className="px-5 py-3 font-medium text-slate-700">{lot.qtyRemaining}</td>
                   <td className="px-5 py-3 text-slate-600">{lot.qaStatus}</td>
                   <td className="px-5 py-3">{expiryBadge(lot.expiryDate)}</td>
+                  <td className="px-5 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      {['PENDING', 'RELEASED', 'QUARANTINED', 'REJECTED'].map((status) => (
+                        <button key={status} onClick={() => updateQa.mutate({ id: lot.id, qaStatus: status })} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                          {status}
+                        </button>
+                      ))}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -45,15 +45,39 @@ export const inventoryService = {
   updateWarehouse: (id: string, data: object) =>
     api.put(`/inventory/warehouses/${id}`, data).then((r) => r.data),
   deactivateWarehouse: (id: string) => api.delete(`/inventory/warehouses/${id}`),
+  zones: (warehouseId: string) => api.get(`/inventory/warehouses/${warehouseId}/zones`).then((r) => r.data),
+  createZone: (warehouseId: string, data: object) =>
+    api.post(`/inventory/warehouses/${warehouseId}/zones`, data).then((r) => r.data),
+  updateZone: (warehouseId: string, zoneId: string, data: object) =>
+    api.put(`/inventory/warehouses/${warehouseId}/zones/${zoneId}`, data).then((r) => r.data),
+  bins: (params?: { warehouseId?: string; zoneId?: string }) =>
+    api.get('/inventory/bins', { params }).then((r) => r.data),
+  createBin: (data: object) => api.post('/inventory/bins', data).then((r) => r.data),
+  updateBin: (id: string, data: object) => api.put(`/inventory/bins/${id}`, data).then((r) => r.data),
+  deactivateBin: (id: string) => api.delete(`/inventory/bins/${id}`),
   stockLevels: (params?: { warehouseId?: string; productId?: string }) =>
     api.get('/inventory/stock-levels', { params }).then((r) => r.data),
+  binStockLevels: (params?: { warehouseId?: string; productId?: string; binId?: string }) =>
+    api.get('/inventory/bin-stock-levels', { params }).then((r) => r.data),
   lots: (params?: { expiringInDays?: number; productId?: string }) =>
     api.get('/inventory/lots', { params }).then((r) => r.data),
+  updateLotQaStatus: (id: string, data: object) =>
+    api.put(`/inventory/lots/${id}/qa-status`, data).then((r) => r.data),
   valuation: (params?: { warehouseId?: string; productId?: string }) =>
     api.get('/inventory/valuation', { params }).then((r) => r.data),
   movements: (params?: { productId?: string; limit?: number }) =>
     api.get('/inventory/movements', { params }).then((r) => r.data),
   adjustStock: (data: object) => api.post('/inventory/adjustments', data).then((r) => r.data),
+  transfers: () => api.get('/inventory/transfers').then((r) => r.data),
+  createTransfer: (data: object) => api.post('/inventory/transfers', data).then((r) => r.data),
+  shipTransfer: (id: string) => api.post(`/inventory/transfers/${id}/ship`).then((r) => r.data),
+  receiveTransfer: (id: string) => api.post(`/inventory/transfers/${id}/receive`).then((r) => r.data),
+  cycleCounts: (params?: { warehouseId?: string; status?: string }) =>
+    api.get('/inventory/cycle-counts', { params }).then((r) => r.data),
+  createCycleCount: (data: object) => api.post('/inventory/cycle-counts', data).then((r) => r.data),
+  updateCycleCountLine: (id: string, lineId: string, data: object) =>
+    api.put(`/inventory/cycle-counts/${id}/lines/${lineId}`, data).then((r) => r.data),
+  postCycleCount: (id: string) => api.post(`/inventory/cycle-counts/${id}/post`).then((r) => r.data),
 };
 
 export const dashboardService = {

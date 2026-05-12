@@ -1,4 +1,4 @@
-export type InventoryTab = 'products' | 'stock' | 'lots' | 'movements';
+export type InventoryTab = 'products' | 'locations' | 'stock' | 'lots' | 'transfers' | 'counts' | 'movements';
 
 export interface Category {
   id: string;
@@ -34,9 +34,34 @@ export interface Warehouse {
   code: string;
   name: string;
   address?: string | null;
+  country?: string | null;
+  currency?: string;
   taxJurisdiction?: string | null;
   isActive: boolean;
   createdAt: string;
+}
+
+export interface WarehouseZone {
+  id: string;
+  warehouseId: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  bins?: BinLocation[];
+}
+
+export interface BinLocation {
+  id: string;
+  warehouseId: string;
+  zoneId?: string | null;
+  code: string;
+  name?: string | null;
+  barcode?: string | null;
+  binType: string;
+  isActive: boolean;
+  warehouse?: Pick<Warehouse, 'id' | 'code' | 'name'>;
+  zone?: WarehouseZone | null;
 }
 
 export interface StockLevel {
@@ -51,6 +76,18 @@ export interface StockLevel {
   updatedAt: string;
   product?: Pick<Product, 'id' | 'sku' | 'name' | 'uom' | 'reorderPoint'>;
   warehouse?: Pick<Warehouse, 'id' | 'code' | 'name'>;
+}
+
+export interface BinStockLevel {
+  id: string;
+  productId: string;
+  warehouseId: string;
+  binId: string;
+  onHand: number;
+  reserved: number;
+  product?: Pick<Product, 'id' | 'sku' | 'name' | 'uom'>;
+  warehouse?: Pick<Warehouse, 'id' | 'code' | 'name'>;
+  bin?: BinLocation;
 }
 
 export interface Lot {
@@ -70,6 +107,7 @@ export interface StockMovement {
   id: string;
   productId: string;
   warehouseId: string;
+  binId?: string | null;
   lotId?: string | null;
   qty: number;
   direction: 'IN' | 'OUT' | 'TRANSFER' | string;
@@ -81,6 +119,60 @@ export interface StockMovement {
   product?: Pick<Product, 'id' | 'sku' | 'name' | 'uom'>;
   warehouse?: Pick<Warehouse, 'id' | 'code' | 'name'>;
   lot?: Pick<Lot, 'id' | 'lotNumber'>;
+}
+
+export interface StockTransferLine {
+  id: string;
+  transferId: string;
+  productId: string;
+  lotId?: string | null;
+  sourceBinId?: string | null;
+  destinationBinId?: string | null;
+  qtyRequested: number;
+  qtyShipped: number;
+  qtyReceived: number;
+  product?: Pick<Product, 'id' | 'sku' | 'name' | 'uom'>;
+  lot?: Lot | null;
+}
+
+export interface StockTransfer {
+  id: string;
+  transferNumber: string;
+  sourceWarehouseId: string;
+  destinationWarehouseId: string;
+  status: string;
+  notes?: string | null;
+  createdAt: string;
+  shippedAt?: string | null;
+  receivedAt?: string | null;
+  sourceWarehouse?: Pick<Warehouse, 'id' | 'code' | 'name'>;
+  destinationWarehouse?: Pick<Warehouse, 'id' | 'code' | 'name'>;
+  lines: StockTransferLine[];
+}
+
+export interface CycleCountLine {
+  id: string;
+  cycleCountId: string;
+  productId: string;
+  binId?: string | null;
+  expectedQty: number;
+  countedQty?: number | null;
+  varianceQty?: number | null;
+  notes?: string | null;
+  product?: Pick<Product, 'id' | 'sku' | 'name' | 'uom'>;
+  bin?: BinLocation | null;
+}
+
+export interface CycleCount {
+  id: string;
+  countNumber: string;
+  warehouseId: string;
+  status: string;
+  startedAt: string;
+  postedAt?: string | null;
+  notes?: string | null;
+  warehouse?: Pick<Warehouse, 'id' | 'code' | 'name'>;
+  lines: CycleCountLine[];
 }
 
 export interface ProductFormInput {
@@ -108,6 +200,7 @@ export interface WarehouseFormInput {
 export interface StockAdjustmentInput {
   productId: string;
   warehouseId: string;
+  binId?: string | null;
   lotId?: string | null;
   qty: number;
   notes?: string | null;

@@ -31,6 +31,9 @@ model User {
   shipments          Shipment[]
   events             EventLog[]
   acknowledgedAlerts Alert[]
+  requestedTransfers StockTransfer[]
+  startedCycleCounts CycleCount[] @relation("CycleCountStartedBy")
+  postedCycleCounts  CycleCount[] @relation("CycleCountPostedBy")
 }
 
 enum Role {
@@ -92,6 +95,9 @@ model Product {
   shipmentLines      ShipmentLine[]
   forecasts          Forecast[]
   reorderRecs        ReorderRecommendation[]
+  binStockLevels      BinStockLevel[]
+  stockTransferLines  StockTransferLine[]
+  cycleCountLines     CycleCountLine[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -104,6 +110,8 @@ model Warehouse {
   code            String   @unique
   name            String
   address         String?
+  country         String?
+  currency        String   @default("USD")
   taxJurisdiction String?
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
@@ -112,6 +120,51 @@ model Warehouse {
   stockMovements StockMovement[]
   costLayers     CostLayer[]
   forecasts      Forecast[]
+  zones          WarehouseZone[]
+  bins           BinLocation[]
+  binStockLevels BinStockLevel[]
+  outgoingTransfers StockTransfer[] @relation("TransferSourceWarehouse")
+  incomingTransfers StockTransfer[] @relation("TransferDestinationWarehouse")
+  cycleCounts    CycleCount[]
+}
+
+model WarehouseZone {
+  id          String   @id @default(uuid())
+  warehouseId String
+  code        String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  bins      BinLocation[]
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+}
+
+model BinLocation {
+  id          String   @id @default(uuid())
+  warehouseId String
+  zoneId      String?
+  code        String
+  name        String?
+  barcode     String?  @unique
+  binType     String   @default("PICK") // PICK | BULK | RECEIVING | QA | DAMAGED | RETURNS
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
+  zone      WarehouseZone? @relation(fields: [zoneId], references: [id])
+  binStockLevels BinStockLevel[]
+  stockMovements StockMovement[]
+  lots      Lot[]
+  cycleCountLines CycleCountLine[]
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+  @@index([zoneId])
 }
 
 // Per-warehouse stock position. The single source of truth for "what we have where".
@@ -132,6 +185,24 @@ model StockLevel {
 
   @@unique([productId, warehouseId])
   @@index([warehouseId])
+}
+
+model BinStockLevel {
+  id          String   @id @default(uuid())
+  productId   String
+  warehouseId String
+  binId       String
+  onHand      Int      @default(0)
+  reserved    Int      @default(0)
+  version     Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  product   Product     @relation(fields: [productId], references: [id])
+  warehouse Warehouse   @relation(fields: [warehouseId], references: [id])
+  bin       BinLocation @relation(fields: [binId], references: [id])
+
+  @@unique([productId, binId])
+  @@index([warehouseId, binId])
 }
 
 // ─── Suppliers ────────────────────────────────────────────────────────────────
@@ -212,14 +283,19 @@ model Lot {
   qtyReceived   Int
   qtyRemaining  Int
   qaStatus      String    @default("RELEASED") // PENDING | RELEASED | REJECTED | QUARANTINED
+  currentBinId  String?
 
   product  Product   @relation(fields: [productId], references: [id])
   supplier Supplier? @relation(fields: [supplierId], references: [id])
+  currentBin BinLocation? @relation(fields: [currentBinId], references: [id])
 
   costLayers     CostLayer[]
   movements      StockMovement[]
+  stockTransferLines StockTransferLine[]
+  cycleCountLines    CycleCountLine[]
 
   @@index([productId, expiryDate])
+  @@index([currentBinId])
 }
 
 // Append-only ledger of every stock change. Never updated, never deleted.
@@ -227,6 +303,7 @@ model StockMovement {
   id            String   @id @default(uuid())
   productId     String
   warehouseId   String
+  binId         String?
   lotId         String?
   qty           Int      // signed: positive = in, negative = out
   direction     String   // IN | OUT | TRANSFER
@@ -239,10 +316,93 @@ model StockMovement {
 
   product   Product   @relation(fields: [productId], references: [id])
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  bin       BinLocation? @relation(fields: [binId], references: [id])
   lot       Lot?      @relation(fields: [lotId], references: [id])
 
   @@index([productId, warehouseId, createdAt])
+  @@index([binId, createdAt])
   @@index([sourceDocType, sourceDocId])
+}
+
+model StockTransfer {
+  id                     String   @id @default(uuid())
+  transferNumber         String   @unique
+  sourceWarehouseId      String
+  destinationWarehouseId String
+  status                 String   @default("DRAFT") // DRAFT | IN_TRANSIT | RECEIVED | CANCELLED
+  requestedById          String?
+  shippedAt              DateTime?
+  receivedAt             DateTime?
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  sourceWarehouse      Warehouse @relation("TransferSourceWarehouse", fields: [sourceWarehouseId], references: [id])
+  destinationWarehouse Warehouse @relation("TransferDestinationWarehouse", fields: [destinationWarehouseId], references: [id])
+  requestedBy          User?     @relation(fields: [requestedById], references: [id])
+  lines                StockTransferLine[]
+
+  @@index([sourceWarehouseId, status])
+  @@index([destinationWarehouseId, status])
+}
+
+model StockTransferLine {
+  id              String @id @default(uuid())
+  transferId      String
+  productId       String
+  lotId           String?
+  sourceBinId     String?
+  destinationBinId String?
+  qtyRequested    Int
+  qtyShipped      Int    @default(0)
+  qtyReceived     Int    @default(0)
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id])
+  product  Product       @relation(fields: [productId], references: [id])
+  lot      Lot?          @relation(fields: [lotId], references: [id])
+
+  @@index([transferId])
+  @@index([productId])
+}
+
+model CycleCount {
+  id          String   @id @default(uuid())
+  countNumber String   @unique
+  warehouseId String
+  status      String   @default("OPEN") // OPEN | POSTED | CANCELLED
+  startedById String?
+  postedById  String?
+  startedAt   DateTime @default(now())
+  postedAt    DateTime?
+  notes       String?
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  startedBy User?     @relation("CycleCountStartedBy", fields: [startedById], references: [id])
+  postedBy  User?     @relation("CycleCountPostedBy", fields: [postedById], references: [id])
+  lines     CycleCountLine[]
+
+  @@index([warehouseId, status])
+}
+
+model CycleCountLine {
+  id          String   @id @default(uuid())
+  cycleCountId String
+  productId   String
+  binId       String?
+  lotId       String?
+  expectedQty Int
+  countedQty  Int?
+  varianceQty Int?
+  notes       String?
+  countedAt   DateTime?
+
+  cycleCount CycleCount @relation(fields: [cycleCountId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id])
+  bin        BinLocation? @relation(fields: [binId], references: [id])
+  lot        Lot?       @relation(fields: [lotId], references: [id])
+
+  @@index([cycleCountId])
+  @@index([productId])
 }
 
 // ─── FIFO Cost Engine ─────────────────────────────────────────────────────────

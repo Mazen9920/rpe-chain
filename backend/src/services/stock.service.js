@@ -14,7 +14,7 @@ const DIRECTION = {
   SCRAP: 'OUT',
   QA_HOLD: 'OUT',
   ADJUSTMENT: 'IN', // sign of qty determines direction
-  TRANSFER: 'TRANSFER',
+  TRANSFER: 'IN', // sign of qty determines direction
 };
 
 /**
@@ -26,6 +26,7 @@ async function recordMovement(params, tx) {
     const {
       productId,
       warehouseId,
+      binId,
       lotId,
       qty,
       reasonCode,
@@ -35,8 +36,9 @@ async function recordMovement(params, tx) {
       notes,
     } = params;
 
-    const direction =
-      reasonCode === 'ADJUSTMENT' ? (qty >= 0 ? 'IN' : 'OUT') : DIRECTION[reasonCode] || 'IN';
+    const direction = ['ADJUSTMENT', 'TRANSFER'].includes(reasonCode)
+      ? (qty >= 0 ? 'IN' : 'OUT')
+      : DIRECTION[reasonCode] || 'IN';
     const signedQty = direction === 'OUT' ? -Math.abs(qty) : Math.abs(qty);
 
     // Upsert the StockLevel snapshot.
@@ -64,11 +66,38 @@ async function recordMovement(params, tx) {
       });
     }
 
+    if (binId) {
+      const existingBin = await client.binStockLevel.findUnique({
+        where: { productId_binId: { productId, binId } },
+      });
+
+      if (existingBin) {
+        const newBinOnHand = existingBin.onHand + signedQty;
+        if (newBinOnHand < 0) {
+          throw new Error(
+            `Stock movement would cause negative bin on-hand for product ${productId} at bin ${binId}`
+          );
+        }
+        await client.binStockLevel.update({
+          where: { id: existingBin.id },
+          data: { onHand: newBinOnHand, version: { increment: 1 } },
+        });
+      } else {
+        if (signedQty < 0) {
+          throw new Error('Cannot remove stock from a bin with no record');
+        }
+        await client.binStockLevel.create({
+          data: { productId, warehouseId, binId, onHand: signedQty },
+        });
+      }
+    }
+
     // Append the movement.
     return client.stockMovement.create({
       data: {
         productId,
         warehouseId,
+        binId,
         lotId,
         qty: signedQty,
         direction,

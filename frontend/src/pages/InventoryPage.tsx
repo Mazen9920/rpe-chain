@@ -1,17 +1,23 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Boxes, ClipboardList, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
+import { ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
 import type { InventoryTab } from '../types/inventory';
+import CycleCountsTab from './inventory/CycleCountsTab';
+import LocationsTab from './inventory/LocationsTab';
 import LotsTab from './inventory/LotsTab';
 import MovementsTab from './inventory/MovementsTab';
 import ProductsTab from './inventory/ProductsTab';
 import StockByWarehouseTab from './inventory/StockByWarehouseTab';
+import TransfersTab from './inventory/TransfersTab';
 import WarehouseManageModal from './inventory/WarehouseManageModal';
 
 const tabs: Array<{ id: InventoryTab; label: string; icon: React.ElementType }> = [
   { id: 'products', label: 'Products', icon: Package },
+  { id: 'locations', label: 'Locations', icon: MapPinned },
   { id: 'stock', label: 'Stock by Warehouse', icon: Boxes },
   { id: 'lots', label: 'Lots', icon: Layers },
+  { id: 'transfers', label: 'Transfers', icon: ArrowRightLeft },
+  { id: 'counts', label: 'Cycle Counts', icon: ClipboardCheck },
   { id: 'movements', label: 'Movements', icon: ClipboardList },
 ];
 
@@ -66,8 +72,11 @@ export default function InventoryPage() {
       </div>
 
       {activeTab === 'products' ? <ProductsTab /> : null}
+      {activeTab === 'locations' ? <LocationsTab /> : null}
       {activeTab === 'stock' ? <StockByWarehouseTab /> : null}
       {activeTab === 'lots' ? <LotsTab /> : null}
+      {activeTab === 'transfers' ? <TransfersTab /> : null}
+      {activeTab === 'counts' ? <CycleCountsTab /> : null}
       {activeTab === 'movements' ? <MovementsTab /> : null}
 
       <WarehouseManageModal open={warehouseModalOpen} onClose={() => setWarehouseModalOpen(false)} />
