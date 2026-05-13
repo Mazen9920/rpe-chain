@@ -1,6 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Building2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import type { Category, Product, ProductFormInput } from '../../types/inventory';
+import { supplierService } from '../../services';
 
 const emptyForm: ProductFormInput = {
   sku: '',
@@ -183,6 +186,8 @@ export default function ProductFormSlideOver({
             <span className="font-medium text-slate-700">Certifications</span>
             <input value={String(form.certifications ?? '')} onChange={(e) => update('certifications', e.target.value)} placeholder="NIOSH, CE, EN149" className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" />
           </label>
+
+          {product?.id ? <SuppliersForProduct productId={product.id} /> : null}
         </div>
 
         <div className="sticky bottom-0 flex justify-end gap-3 border-t border-slate-100 bg-white px-6 py-4">
@@ -193,5 +198,38 @@ export default function ProductFormSlideOver({
         </div>
       </form>
     </div>
+  );
+}
+
+function SuppliersForProduct({ productId }: { productId: string }) {
+  const { data = [] } = useQuery({
+    queryKey: ['suppliers-for-product', productId],
+    queryFn: () => supplierService.byProduct(productId),
+  });
+  if (!data.length) return (
+    <section className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+      <p className="mb-1 font-semibold uppercase tracking-wide text-slate-400">Suppliers</p>
+      No suppliers linked to this product yet.
+    </section>
+  );
+  return (
+    <section className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Suppliers ({data.length})</p>
+      <ul className="space-y-1.5 text-sm">
+        {data.map((row) => (
+          <li key={row.id} className="flex items-center justify-between gap-2">
+            <Link to={`/suppliers/${row.supplier?.id}`} className="inline-flex items-center gap-1.5 text-slate-700 hover:text-slate-900">
+              <Building2 size={12} className="text-slate-400" />
+              <span className="font-medium">{row.supplier?.name}</span>
+              <span className="font-mono text-[11px] text-slate-400">{row.supplier?.code}</span>
+            </Link>
+            <span className="text-xs text-slate-500">
+              P{row.priority} · {Number(row.agreedPrice).toFixed(2)} · MOQ {row.moq}
+              {row.leadTimeDays != null ? ` · ${row.leadTimeDays}d` : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

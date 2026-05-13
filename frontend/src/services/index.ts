@@ -1,4 +1,16 @@
 import api from '../lib/api';
+import type {
+  Supplier,
+  SupplierContact,
+  SupplierDocument,
+  SupplierPerformance,
+  SupplierProductLink,
+  SupplierCategory,
+  SupplierKpis,
+  SupplierListResponse,
+  SupplierActivityEntry,
+  RecomputePerformanceResult,
+} from '../types/supplier';
 
 export const categoryService = {
   list: () => api.get('/categories').then((r) => r.data),
@@ -15,12 +27,88 @@ export const productService = {
   delete: (id: string) => api.delete(`/products/${id}`),
 };
 
+export interface SupplierListParams {
+  search?: string;
+  approvalStatus?: string;
+  country?: string;
+  categoryId?: string;
+  riskRating?: string;
+  isActive?: boolean;
+  limit?: number;
+  offset?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
+}
+
 export const supplierService = {
-  list: () => api.get('/suppliers').then((r) => r.data),
-  getById: (id: string) => api.get(`/suppliers/${id}`).then((r) => r.data),
-  create: (data: object) => api.post('/suppliers', data).then((r) => r.data),
-  update: (id: string, data: object) => api.put(`/suppliers/${id}`, data).then((r) => r.data),
+  list: (params?: SupplierListParams) =>
+    api.get<SupplierListResponse>('/suppliers', { params }).then((r) => r.data),
+  kpis: () => api.get<SupplierKpis>('/suppliers/kpis').then((r) => r.data),
+  getById: (id: string) => api.get<Supplier>(`/suppliers/${id}`).then((r) => r.data),
+  create: (data: Partial<Supplier>) => api.post<Supplier>('/suppliers', data).then((r) => r.data),
+  update: (id: string, data: Partial<Supplier>) =>
+    api.put<Supplier>(`/suppliers/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/suppliers/${id}`),
+  setApproval: (id: string, status: string, reason?: string) =>
+    api.post<Supplier>(`/suppliers/${id}/approval`, { status, reason }).then((r) => r.data),
+  byProduct: (productId: string) =>
+    api.get<SupplierProductLink[]>(`/suppliers/by-product/${productId}`).then((r) => r.data),
+  activity: (id: string, params?: { limit?: number; offset?: number }) =>
+    api.get<SupplierActivityEntry[]>(`/suppliers/${id}/activity`, { params }).then((r) => r.data),
+
+  contacts: {
+    list: (supplierId: string) =>
+      api.get<SupplierContact[]>(`/suppliers/${supplierId}/contacts`).then((r) => r.data),
+    create: (supplierId: string, data: Partial<SupplierContact>) =>
+      api.post<SupplierContact>(`/suppliers/${supplierId}/contacts`, data).then((r) => r.data),
+    update: (supplierId: string, contactId: string, data: Partial<SupplierContact>) =>
+      api.put<SupplierContact>(`/suppliers/${supplierId}/contacts/${contactId}`, data).then((r) => r.data),
+    delete: (supplierId: string, contactId: string) =>
+      api.delete(`/suppliers/${supplierId}/contacts/${contactId}`),
+  },
+
+  products: {
+    list: (supplierId: string) =>
+      api.get<SupplierProductLink[]>(`/suppliers/${supplierId}/products`).then((r) => r.data),
+    upsert: (supplierId: string, data: Partial<SupplierProductLink> & { productId: string }) =>
+      api.post<SupplierProductLink>(`/suppliers/${supplierId}/products`, data).then((r) => r.data),
+    remove: (supplierId: string, productId: string) =>
+      api.delete(`/suppliers/${supplierId}/products/${productId}`),
+  },
+
+  documents: {
+    list: (supplierId: string, params?: { category?: string; includeExpired?: boolean }) =>
+      api.get<SupplierDocument[]>(`/suppliers/${supplierId}/documents`, { params }).then((r) => r.data),
+    upload: (supplierId: string, formData: FormData) =>
+      api.post<SupplierDocument>(`/suppliers/${supplierId}/documents`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then((r) => r.data),
+    download: (docId: string) =>
+      api.get(`/suppliers/documents/${docId}/download`, { responseType: 'blob' }).then((r) => r.data as Blob),
+    delete: (docId: string) => api.delete(`/suppliers/documents/${docId}`),
+  },
+
+  performance: {
+    list: (supplierId: string, params?: { from?: string; to?: string }) =>
+      api.get<SupplierPerformance[]>(`/suppliers/${supplierId}/performance`, { params }).then((r) => r.data),
+    upsert: (supplierId: string, data: Partial<SupplierPerformance>) =>
+      api.post<SupplierPerformance>(`/suppliers/${supplierId}/performance`, data).then((r) => r.data),
+    recompute: (supplierId: string, periodStart?: string, periodEnd?: string) =>
+      api.post<RecomputePerformanceResult>(`/suppliers/${supplierId}/performance/recompute`, {
+        periodStart, periodEnd,
+      }).then((r) => r.data),
+  },
+
+  categories: {
+    list: () => api.get<SupplierCategory[]>('/supplier-categories').then((r) => r.data),
+    create: (data: Partial<SupplierCategory>) =>
+      api.post<SupplierCategory>('/supplier-categories', data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/supplier-categories/${id}`),
+    attach: (supplierId: string, categoryId: string) =>
+      api.post(`/suppliers/${supplierId}/categories/${categoryId}`),
+    detach: (supplierId: string, categoryId: string) =>
+      api.delete(`/suppliers/${supplierId}/categories/${categoryId}`),
+  },
 };
 
 export const purchaseOrderService = {

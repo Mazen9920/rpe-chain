@@ -233,14 +233,36 @@ model Supplier {
   name            String
   legalName       String?
   taxId           String?
+  taxRegistered   Boolean  @default(false)
   currency        String   @default("USD")
   paymentTerms    String   @default("NET30") // NET15 | NET30 | NET45 | NET60 | NET90 | COD | PREPAID
+  incoterms       String?  // EXW | FOB | CIF | DAP | DDP ...
   leadTimeDays    Int      @default(7)
+
+  // Primary contact (kept for back-compat; multi-contact via SupplierContact)
   primaryContact  String?
   email           String?
   phone           String?
+  website         String?
+
+  // Address
+  addressLine1    String?
+  addressLine2    String?
+  city            String?
+  state           String?
+  postalCode      String?
   country         String?
-  riskRating      String?  // LOW | MEDIUM | HIGH
+
+  // Banking
+  bankName            String?
+  bankAccountNumber   String?
+  iban                String?
+  swift               String?
+
+  riskRating       String?  // LOW | MEDIUM | HIGH
+  approvalStatus   String   @default("DRAFT") // DRAFT | UNDER_REVIEW | APPROVED | PREFERRED | BLOCKED
+  notes            String?
+
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -253,6 +275,75 @@ model Supplier {
   apEntries        ApLedgerEntry[]
   payments         Payment[]
   lots             Lot[]
+  contacts         SupplierContact[]
+  documents        SupplierDocument[]
+  categoryLinks    SupplierCategoryLink[]
+
+  @@index([approvalStatus])
+  @@index([country])
+  @@index([riskRating])
+}
+
+// Multiple contacts per supplier (replaces the single primaryContact string)
+model SupplierContact {
+  id          String   @id @default(uuid())
+  supplierId  String
+  name        String
+  role        String?
+  email       String?
+  phone       String?
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId, isPrimary])
+}
+
+// Document attachments (contracts, certs, insurance, ...)
+model SupplierDocument {
+  id            String    @id @default(uuid())
+  supplierId    String
+  category      String    // CONTRACT | NDA | ISO_CERT | INSURANCE | TAX_CERT | BANK_LETTER | OTHER
+  title         String
+  filename      String
+  storagePath   String
+  mimeType      String
+  sizeBytes     Int
+  expiresAt     DateTime?
+  uploadedById  String?
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId, category])
+  @@index([expiresAt])
+}
+
+// Categories for grouping suppliers (RAW_MATERIALS, PACKAGING, ...)
+model SupplierCategory {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  supplierLinks SupplierCategoryLink[]
+}
+
+model SupplierCategoryLink {
+  supplierId String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  supplier Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  category SupplierCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([supplierId, categoryId])
+  @@index([categoryId])
 }
 
 // Per-supplier per-SKU commercial terms (primary/secondary/backup sourcing)
@@ -284,7 +375,10 @@ model SupplierPerformance {
   defectRate    Float?
   leadTimeMean  Float?
   leadTimeStd   Float?
+  source        String   @default("MANUAL") // MANUAL | AUTO
+  notes         String?
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   supplier Supplier @relation(fields: [supplierId], references: [id])
 

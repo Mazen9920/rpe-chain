@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage';
 import InventoryPage from './pages/InventoryPage';
 import ManufacturingPage from './pages/ManufacturingPage';
 import SuppliersPage from './pages/SuppliersPage';
+import SupplierDetailPage from './pages/SupplierDetailPage';
 import OrdersPage from './pages/OrdersPage';
 import ShipmentsPage from './pages/ShipmentsPage';
 
@@ -26,6 +27,7 @@ export default function App() {
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/manufacturing" element={<ManufacturingPage />} />
               <Route path="/suppliers" element={<SuppliersPage />} />
+              <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/shipments" element={<ShipmentsPage />} />
             </Route>

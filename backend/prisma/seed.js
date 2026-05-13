@@ -127,13 +127,28 @@ async function main() {
   // ── Suppliers ─────────────────────────────────────────────────────────────
   const sup3M = await prisma.supplier.upsert({
     where: { code: 'SUP-001' },
-    update: {},
-    create: { code: 'SUP-001', name: '3M Safety Distributor MENA', legalName: '3M Safety Distribution LLC', currency: 'USD', paymentTerms: 'NET30', leadTimeDays: 14, primaryContact: 'Sarah Mansour', email: 'orders@3msafety-mena.example', country: 'AE', riskRating: 'LOW' },
+    update: { approvalStatus: 'PREFERRED', taxRegistered: true, incoterms: 'DDP', website: 'https://3m.example', addressLine1: 'Sheikh Zayed Rd 215', city: 'Dubai', country: 'AE', postalCode: '00000', bankName: 'Emirates NBD', iban: 'AE070331234567890123456', swift: 'EBILAEAD' },
+    create: { code: 'SUP-001', name: '3M Safety Distributor MENA', legalName: '3M Safety Distribution LLC', currency: 'USD', paymentTerms: 'NET30', leadTimeDays: 14, primaryContact: 'Sarah Mansour', email: 'orders@3msafety-mena.example', country: 'AE', riskRating: 'LOW', approvalStatus: 'PREFERRED', taxRegistered: true, incoterms: 'DDP', website: 'https://3m.example', addressLine1: 'Sheikh Zayed Rd 215', city: 'Dubai', postalCode: '00000', bankName: 'Emirates NBD', iban: 'AE070331234567890123456', swift: 'EBILAEAD' },
   });
   const supHoneywell = await prisma.supplier.upsert({
     where: { code: 'SUP-002' },
+    update: { approvalStatus: 'APPROVED', taxRegistered: true, incoterms: 'FOB', website: 'https://honeywell.example', addressLine1: '17 Marsh Wall', city: 'London', country: 'GB', postalCode: 'E14 9TJ', bankName: 'HSBC UK', iban: 'GB29NWBK60161331926819', swift: 'HBUKGB4B' },
+    create: { code: 'SUP-002', name: 'Honeywell Safety UK', legalName: 'Honeywell Safety Products Ltd', currency: 'GBP', paymentTerms: 'NET45', leadTimeDays: 21, primaryContact: 'James Wright', email: 'safety@honeywell-uk.example', country: 'GB', riskRating: 'LOW', approvalStatus: 'APPROVED', taxRegistered: true, incoterms: 'FOB', website: 'https://honeywell.example', addressLine1: '17 Marsh Wall', city: 'London', postalCode: 'E14 9TJ', bankName: 'HSBC UK', iban: 'GB29NWBK60161331926819', swift: 'HBUKGB4B' },
+  });
+  const supDraeger = await prisma.supplier.upsert({
+    where: { code: 'SUP-003' },
     update: {},
-    create: { code: 'SUP-002', name: 'Honeywell Safety UK', legalName: 'Honeywell Safety Products Ltd', currency: 'GBP', paymentTerms: 'NET45', leadTimeDays: 21, primaryContact: 'James Wright', email: 'safety@honeywell-uk.example', country: 'GB', riskRating: 'LOW' },
+    create: { code: 'SUP-003', name: 'Dräger Safety GmbH', legalName: 'Drägerwerk AG & Co. KGaA', currency: 'EUR', paymentTerms: 'NET60', incoterms: 'EXW', leadTimeDays: 28, primaryContact: 'Lukas Hoffmann', email: 'export@draeger.example', country: 'DE', riskRating: 'LOW', approvalStatus: 'UNDER_REVIEW', taxRegistered: true, addressLine1: 'Moislinger Allee 53-55', city: 'Lübeck', postalCode: '23558', bankName: 'Deutsche Bank', iban: 'DE89370400440532013000', swift: 'DEUTDEFF' },
+  });
+  const supMoldex = await prisma.supplier.upsert({
+    where: { code: 'SUP-004' },
+    update: {},
+    create: { code: 'SUP-004', name: 'Moldex-Metric Inc', legalName: 'Moldex-Metric, Inc.', currency: 'USD', paymentTerms: 'NET30', incoterms: 'FOB', leadTimeDays: 18, primaryContact: 'Maria Lopez', email: 'sales@moldex.example', country: 'US', riskRating: 'MEDIUM', approvalStatus: 'APPROVED', taxRegistered: true, addressLine1: '10111 W Jefferson Blvd', city: 'Culver City', state: 'CA', postalCode: '90232', bankName: 'Bank of America', iban: 'US12345678901234567890', swift: 'BOFAUS3N' },
+  });
+  const supGulf = await prisma.supplier.upsert({
+    where: { code: 'SUP-005' },
+    update: {},
+    create: { code: 'SUP-005', name: 'Gulf PPE Trading', legalName: 'Gulf PPE Trading FZE', currency: 'AED', paymentTerms: 'NET15', incoterms: 'CIF', leadTimeDays: 7, primaryContact: 'Omar Al-Rashid', email: 'omar@gulfppe.example', country: 'AE', riskRating: 'HIGH', approvalStatus: 'DRAFT', taxRegistered: false, addressLine1: 'Jebel Ali Free Zone', city: 'Dubai', postalCode: '17000', notes: 'New vendor; pending compliance review.' },
   });
 
   // ── Products (5) ──────────────────────────────────────────────────────────
@@ -158,17 +173,81 @@ async function main() {
     // Preferred supplier
     await prisma.supplierProduct.upsert({
       where: { supplierId_productId: { supplierId: preferredSupId, productId: product.id } },
-      update: {},
-      create: { supplierId: preferredSupId, productId: product.id, agreedPrice: p.costPrice, moq: 50, priority: 1 },
+      update: { supplierSku: `${preferredSupId === sup3M.id ? '3M' : 'HW'}-${product.sku}`, leadTimeDays: preferredSupId === sup3M.id ? 14 : 21 },
+      create: { supplierId: preferredSupId, productId: product.id, agreedPrice: p.costPrice, moq: 50, priority: 1, supplierSku: `${preferredSupId === sup3M.id ? '3M' : 'HW'}-${product.sku}`, leadTimeDays: preferredSupId === sup3M.id ? 14 : 21 },
     });
     // Secondary supplier (Honeywell as backup for 3M products)
     if (preferredSupId === sup3M.id) {
       await prisma.supplierProduct.upsert({
         where: { supplierId_productId: { supplierId: supHoneywell.id, productId: product.id } },
-        update: {},
-        create: { supplierId: supHoneywell.id, productId: product.id, agreedPrice: p.costPrice * 1.05, moq: 100, priority: 2 },
+        update: { supplierSku: `HW-${product.sku}`, leadTimeDays: 21 },
+        create: { supplierId: supHoneywell.id, productId: product.id, agreedPrice: p.costPrice * 1.05, moq: 100, priority: 2, supplierSku: `HW-${product.sku}`, leadTimeDays: 21 },
       });
     }
+  }
+
+  // ── Suppliers v1.0: categories, contacts, performance, extra product links ──
+  const supCategories = [
+    { code: 'RAW_MATERIALS', name: 'Raw materials',  description: 'Filter media, polymers, elastomers' },
+    { code: 'PACKAGING',     name: 'Packaging',      description: 'Boxes, labels, dunnage' },
+    { code: 'LOGISTICS',     name: 'Logistics',      description: 'Carriers, freight forwarders' },
+    { code: 'SERVICES',      name: 'Services',       description: 'Calibration, audit, training' },
+    { code: 'CAPEX',         name: 'CapEx',          description: 'Capital equipment' },
+  ];
+  const catIds = {};
+  for (const c of supCategories) {
+    const row = await prisma.supplierCategory.upsert({ where: { code: c.code }, update: {}, create: c });
+    catIds[c.code] = row.id;
+  }
+
+  const categoryAssignments = [
+    [sup3M.id,        ['RAW_MATERIALS']],
+    [supHoneywell.id, ['RAW_MATERIALS', 'PACKAGING']],
+    [supDraeger.id,   ['CAPEX', 'SERVICES']],
+    [supMoldex.id,    ['RAW_MATERIALS']],
+    [supGulf.id,      ['LOGISTICS', 'PACKAGING']],
+  ];
+  for (const [supplierId, codes] of categoryAssignments) {
+    for (const code of codes) {
+      await prisma.supplierCategoryLink.upsert({
+        where: { supplierId_categoryId: { supplierId, categoryId: catIds[code] } },
+        update: {},
+        create: { supplierId, categoryId: catIds[code] },
+      });
+    }
+  }
+
+  const contacts = [
+    { supplierId: sup3M.id,        name: 'Sarah Mansour',   role: 'Account Manager', email: 'sarah@3msafety-mena.example', phone: '+971-4-555-0100', isPrimary: true  },
+    { supplierId: sup3M.id,        name: 'Tariq Hassan',    role: 'Logistics',       email: 'tariq@3msafety-mena.example', phone: '+971-4-555-0101', isPrimary: false },
+    { supplierId: supHoneywell.id, name: 'James Wright',    role: 'Sales Director',  email: 'james@honeywell-uk.example',  phone: '+44-20-7000-0001', isPrimary: true  },
+    { supplierId: supHoneywell.id, name: 'Emily Carter',    role: 'Customer Service',email: 'emily@honeywell-uk.example',  phone: '+44-20-7000-0002', isPrimary: false },
+    { supplierId: supDraeger.id,   name: 'Lukas Hoffmann',  role: 'Export Manager',  email: 'lukas@draeger.example',       phone: '+49-451-882-0',    isPrimary: true  },
+    { supplierId: supMoldex.id,    name: 'Maria Lopez',     role: 'Sales',           email: 'maria@moldex.example',        phone: '+1-310-837-6500',  isPrimary: true  },
+    { supplierId: supGulf.id,      name: 'Omar Al-Rashid',  role: 'Owner',           email: 'omar@gulfppe.example',        phone: '+971-50-555-0500', isPrimary: true  },
+  ];
+  for (const c of contacts) {
+    const existing = await prisma.supplierContact.findFirst({ where: { supplierId: c.supplierId, name: c.name } });
+    if (!existing) await prisma.supplierContact.create({ data: c });
+  }
+
+  // Manual scorecards (last 2 quarters) for established suppliers
+  const _now = Date.now();
+  const _day = 24 * 60 * 60 * 1000;
+  const q1Start = new Date(_now - 180 * _day);
+  const q1End   = new Date(_now - 90 * _day);
+  const q2Start = new Date(_now - 90 * _day);
+  const q2End   = new Date(_now - 1 * _day);
+  const perfRows = [
+    { supplierId: sup3M.id,        periodStart: q1Start, periodEnd: q1End, onTimeRate: 0.96, fillRate: 0.98, defectRate: 0.005, leadTimeMean: 13.5 },
+    { supplierId: sup3M.id,        periodStart: q2Start, periodEnd: q2End, onTimeRate: 0.97, fillRate: 0.99, defectRate: 0.004, leadTimeMean: 13.2 },
+    { supplierId: supHoneywell.id, periodStart: q1Start, periodEnd: q1End, onTimeRate: 0.92, fillRate: 0.95, defectRate: 0.012, leadTimeMean: 21.0 },
+    { supplierId: supHoneywell.id, periodStart: q2Start, periodEnd: q2End, onTimeRate: 0.93, fillRate: 0.96, defectRate: 0.010, leadTimeMean: 20.5 },
+    { supplierId: supMoldex.id,    periodStart: q2Start, periodEnd: q2End, onTimeRate: 0.88, fillRate: 0.91, defectRate: 0.020, leadTimeMean: 18.8 },
+  ];
+  for (const r of perfRows) {
+    const existing = await prisma.supplierPerformance.findFirst({ where: { supplierId: r.supplierId, periodStart: r.periodStart, periodEnd: r.periodEnd } });
+    if (!existing) await prisma.supplierPerformance.create({ data: { ...r, source: 'MANUAL' } });
   }
 
   // ── Lots + Stock (per warehouse) ──────────────────────────────────────────
@@ -300,7 +379,7 @@ async function main() {
   console.log('   Admin login: admin@rpechain.com / Admin@123');
   console.log('   Production login: production@rpechain.com / Prod@123');
   console.log('   Warehouses: DXB-01 (AED), UK-01 (GBP), USA-01 (USD)');
-  console.log('   Products: 6 (incl. RPE-KIT-HMR assembly) | Suppliers: 2');
+  console.log('   Products: 6 (incl. RPE-KIT-HMR assembly) | Suppliers: 5 (5 categories, contacts, scorecards)');
   console.log('   Manufacturing: 1 active BOM + 1 sample DRAFT order');
 }
 
