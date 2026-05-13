@@ -3,6 +3,56 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.1.0] — 2026-05-13 — Tier 1 hardening (Section 8)
+
+Production-readiness sprint on top of v1.0.0. No new business features — pure
+hardening of deployment, observability, durability, and auth.
+
+### Added
+- **Docker**: multi-stage Dockerfiles for backend (node:24-alpine, non-root) and
+  frontend (build + nginx serve), full-stack `docker-compose.yml` with postgres
+  healthcheck, backend healthcheck on `/api/ready`, and optional pgadmin profile.
+  `.env.example` documents all configuration knobs.
+- **CI** (`.github/workflows/ci.yml`): validate, full smoke test suite against a
+  postgres:16 service container, and docker image build jobs.
+- **Observability**: pino structured JSON logs with redact paths for auth/secret
+  fields, request-id middleware, `/api/health` (always 200) and `/api/ready`
+  (DB ping → 503 on failure), graceful SIGTERM/SIGINT shutdown, optional Sentry
+  (backend + frontend, no-op when DSN unset), frontend `ErrorBoundary`.
+- **Backups**: `backend/scripts/backup.sh` (pg_dump custom format + retention),
+  `backend/scripts/restore.sh` with confirmation, runbook + restore-drill record
+  (RPO 24h / RTO 1h baseline).
+- **Auth hardening (Section 8)**:
+  - 15-minute access JWT + 30-day DB-backed refresh tokens (SHA-256 hashed).
+  - Refresh-token rotation on every use; reuse-detection revokes the entire
+    user's refresh family.
+  - 5-failure account lockout for 30 minutes (HTTP 423).
+  - Optional TOTP MFA via speakeasy with 5-min mfa-challenge JWT between the
+    password step and the code step.
+  - `express-rate-limit` on `/auth/login` (IP + email) and `/auth/refresh`;
+    bypassed via `RATE_LIMIT_DISABLED=true` for tests.
+  - Frontend: persisted refresh token, axios `401 → /auth/refresh → retry`
+    interceptor with single-flight de-dupe, MFA challenge UI in `LoginPage`.
+  - `backend/scripts/test-auth-hardening.sh` — 14/14 cases passing.
+- **Smoke aggregator**: `backend/scripts/run-all-tests.sh` runs all 7 suites and
+  reports a single pass/fail; wired as `npm run test:smoke`.
+
+### Changed
+- `backend/src/app.js`: replaced morgan with pino-http; trust proxy enabled.
+- `backend/src/index.js`: Sentry must load first; logger replaces console.
+- Refresh response shape standardized to `{ token, refreshToken, user }`.
+
+### Migrations
+- `20260513153609_section8_auth_hardening`: adds `failedLoginCount`,
+  `lockedUntil`, `totpSecret`, `totpEnabled`, `lastLoginAt` to `User`, plus the
+  new `RefreshToken` model with cascade-on-delete and indexed `userId` /
+  `expiresAt`.
+
+### Verified
+- All 7 smoke suites green (inventory, manufacturing, suppliers, procurement,
+  ap-ledger, fulfillment, alerts-reporting, auth-hardening).
+- Backup taken + real restore drill into a sidecar DB → row counts match.
+
 ## [1.0.0] — 2026-05-13 — Sections 1–7 complete
 
 First production-candidate release. Seven vertical sections delivered, each
