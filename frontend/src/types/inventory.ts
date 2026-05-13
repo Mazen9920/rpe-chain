@@ -1,4 +1,4 @@
-export type InventoryTab = 'products' | 'locations' | 'stock' | 'lots' | 'transfers' | 'counts' | 'movements' | 'reorder';
+export type InventoryTab = 'products' | 'locations' | 'stock' | 'lots' | 'transfers' | 'counts' | 'movements' | 'reorder' | 'alerts';
 
 export interface Category {
   id: string;

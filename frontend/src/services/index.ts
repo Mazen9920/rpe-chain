@@ -82,6 +82,7 @@ export const inventoryService = {
   postCycleCount: (id: string) => api.post(`/inventory/cycle-counts/${id}/post`).then((r) => r.data),
   cancelCycleCount: (id: string) => api.post(`/inventory/cycle-counts/${id}/cancel`).then((r) => r.data),
   reorderRecommendations: () => api.get('/inventory/reorder-recommendations').then((r) => r.data),
+  alerts: () => api.get('/inventory/alerts').then((r) => r.data),
 };
 
 export const dashboardService = {

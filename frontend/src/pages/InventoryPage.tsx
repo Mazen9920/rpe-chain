@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
 import type { InventoryTab } from '../types/inventory';
+import AlertsTab from './inventory/AlertsTab';
 import CycleCountsTab from './inventory/CycleCountsTab';
 import LocationsTab from './inventory/LocationsTab';
 import LotsTab from './inventory/LotsTab';
@@ -21,6 +22,7 @@ const tabs: Array<{ id: InventoryTab; label: string; icon: React.ElementType }> 
   { id: 'counts', label: 'Cycle Counts', icon: ClipboardCheck },
   { id: 'movements', label: 'Movements', icon: ClipboardList },
   { id: 'reorder', label: 'Reorder', icon: AlertTriangle },
+  { id: 'alerts', label: 'Alerts', icon: AlertCircle },
 ];
 
 function normalizeTab(value: string | null): InventoryTab {
@@ -81,6 +83,7 @@ export default function InventoryPage() {
       {activeTab === 'counts' ? <CycleCountsTab /> : null}
       {activeTab === 'movements' ? <MovementsTab /> : null}
       {activeTab === 'reorder' ? <ReorderTab /> : null}
+      {activeTab === 'alerts' ? <AlertsTab /> : null}
 
       <WarehouseManageModal open={warehouseModalOpen} onClose={() => setWarehouseModalOpen(false)} />
 

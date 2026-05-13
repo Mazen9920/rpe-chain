@@ -22,6 +22,7 @@ router.delete('/bins/:id', requireRole('ADMIN', 'WAREHOUSE'), ctrl.deactivateBin
 
 router.get('/lookup', ctrl.lookupBarcode);
 router.get('/reorder-recommendations', ctrl.getReorderRecommendations);
+router.get('/alerts', ctrl.getAlerts);
 router.get('/stock-levels', ctrl.listStockLevels);
 router.get('/bin-stock-levels', ctrl.listBinStock);
 

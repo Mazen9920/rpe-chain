@@ -794,6 +794,49 @@ async function postCycleCount(req, res) {
   res.json(result);
 }
 
+async function getAlerts(req, res) {
+  const now = new Date();
+  const in90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  // Expiry alerts — lots expiring within 90 days (incl. already expired)
+  const expiringLots = await prisma.lot.findMany({
+    where: {
+      expiryDate: { lte: in90Days },
+      qtyRemaining: { gt: 0 },
+    },
+    include: {
+      product: { select: { id: true, sku: true, name: true, uom: true } },
+      currentBin: { select: { id: true, code: true } },
+    },
+    orderBy: { expiryDate: 'asc' },
+  });
+
+  const expiryAlerts = expiringLots.map((lot) => {
+    const daysLeft = Math.ceil((new Date(lot.expiryDate).getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    let severity;
+    if (daysLeft < 0) severity = 'EXPIRED';
+    else if (daysLeft < 30) severity = 'CRITICAL';
+    else if (daysLeft < 60) severity = 'WARNING';
+    else severity = 'WATCH';
+    return { type: 'EXPIRY', severity, daysLeft, lot, product: lot.product };
+  });
+
+  // Zero-stock alerts — active products with at least one warehouse at 0 on-hand
+  const zeroStockLevels = await prisma.stockLevel.findMany({
+    where: { onHand: { lte: 0 } },
+    include: {
+      product: { select: { id: true, sku: true, name: true, uom: true, reorderPoint: true, isActive: true } },
+      warehouse: { select: { id: true, code: true, name: true } },
+    },
+  });
+
+  const zeroStockAlerts = zeroStockLevels
+    .filter((sl) => sl.product?.isActive)
+    .map((sl) => ({ type: 'ZERO_STOCK', severity: 'CRITICAL', stockLevel: sl, product: sl.product, warehouse: sl.warehouse }));
+
+  res.json({ expiryAlerts, zeroStockAlerts, summary: { expiry: expiryAlerts.length, zeroStock: zeroStockAlerts.length } });
+}
+
 async function getReorderRecommendations(req, res) {
   // Find all StockLevel rows where onHand <= product.reorderPoint
   // Join to product to get reorderPoint, reorderQty, sku, name, and preferred supplier
@@ -886,4 +929,5 @@ module.exports = {
   postCycleCount,
   cancelCycleCount,
   getReorderRecommendations,
+  getAlerts,
 };
