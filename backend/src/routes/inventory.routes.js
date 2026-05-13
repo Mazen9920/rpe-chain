@@ -30,6 +30,7 @@ router.get('/valuation', ctrl.getValuation);
 
 router.get('/movements', ctrl.listMovements);
 router.post('/adjustments', requireRole('ADMIN', 'WAREHOUSE'), ctrl.adjustStock);
+router.post('/bin-moves', requireRole('ADMIN', 'WAREHOUSE'), ctrl.moveBetweenBins);
 
 router.get('/transfers', ctrl.listTransfers);
 router.post('/transfers', requireRole('ADMIN', 'WAREHOUSE'), ctrl.createTransfer);

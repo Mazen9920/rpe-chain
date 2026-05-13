@@ -1,14 +1,16 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { ArrowRightLeft, Plus } from 'lucide-react';
 import { inventoryService } from '../../services';
 import type { BinLocation, BinStockLevel, Warehouse } from '../../types/inventory';
+import BinMoveModal from './BinMoveModal';
 
 export default function LocationsTab() {
   const queryClient = useQueryClient();
   const [warehouseId, setWarehouseId] = useState('');
   const [zoneForm, setZoneForm] = useState({ code: '', name: '' });
   const [binForm, setBinForm] = useState({ code: '', zoneId: '', binType: 'PICK' });
+  const [moveFromBin, setMoveFromBin] = useState<BinLocation | null>(null);
 
   const { data: warehouses = [] } = useQuery<Warehouse[]>({ queryKey: ['inventory', 'warehouses'], queryFn: inventoryService.warehouses });
   const selectedWarehouseId = warehouseId || warehouses[0]?.id || '';
@@ -74,9 +76,9 @@ export default function LocationsTab() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="bg-slate-50">{['Bin', 'Zone', 'Type', 'Barcode', 'On Hand', 'Status'].map((heading) => <th key={heading} className="px-5 py-3 text-left font-medium text-slate-500">{heading}</th>)}</tr></thead>
+            <thead><tr className="bg-slate-50">{['Bin', 'Zone', 'Type', 'Barcode', 'On Hand', 'Status', ''].map((heading) => <th key={heading} className="px-5 py-3 text-left font-medium text-slate-500">{heading}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {isLoading ? <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-500">Loading bins...</td></tr> : bins.length === 0 ? <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-500">No bins yet.</td></tr> : bins.map((bin) => (
+              {isLoading ? <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">Loading bins...</td></tr> : bins.length === 0 ? <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">No bins yet.</td></tr> : bins.map((bin) => (
                 <tr key={bin.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-slate-600">{bin.code}</td>
                   <td className="px-5 py-3 text-slate-600">{bin.zone?.code ?? '—'}</td>
@@ -84,6 +86,17 @@ export default function LocationsTab() {
                   <td className="px-5 py-3 text-slate-500">{bin.barcode ?? '—'}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{stockByBin.get(bin.id) ?? 0}</td>
                   <td className="px-5 py-3"><span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span></td>
+                  <td className="px-5 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setMoveFromBin(bin)}
+                      disabled={(stockByBin.get(bin.id) ?? 0) === 0}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      title="Move stock to another bin"
+                    >
+                      <ArrowRightLeft size={13} /> Move
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -116,6 +129,14 @@ export default function LocationsTab() {
           </div>
         </form>
       </div>
+      {moveFromBin ? (
+        <BinMoveModal
+          warehouseId={selectedWarehouseId}
+          fromBin={moveFromBin}
+          bins={bins}
+          onClose={() => setMoveFromBin(null)}
+        />
+      ) : null}
     </div>
   );
 }

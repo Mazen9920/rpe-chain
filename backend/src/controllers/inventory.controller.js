@@ -1,7 +1,7 @@
 const prisma = require('../lib/prisma');
 const { getInventoryValuation } = require('../services/fifo.service');
 const { logEvent } = require('../services/audit.service');
-const { recordMovement } = require('../services/stock.service');
+const { recordMovement, binMove } = require('../services/stock.service');
 
 function pickWarehouseData(body) {
   return {
@@ -431,6 +431,40 @@ async function adjustStock(req, res) {
   }
 }
 
+async function moveBetweenBins(req, res) {
+  const { productId, warehouseId, fromBinId, toBinId, lotId, qty, notes } = req.body;
+  const numericQty = Number(qty);
+  if (!productId || !warehouseId || !fromBinId || !toBinId || !Number.isFinite(numericQty) || numericQty <= 0) {
+    return res.status(400).json({ error: 'productId, warehouseId, fromBinId, toBinId and positive qty are required' });
+  }
+  if (fromBinId === toBinId) {
+    return res.status(400).json({ error: 'Source and destination bins must differ' });
+  }
+  try {
+    const result = await binMove({
+      productId,
+      warehouseId,
+      fromBinId,
+      toBinId,
+      lotId: lotId || null,
+      qty: numericQty,
+      operatorId: req.user?.id,
+      notes: notes || null,
+    });
+    await logEvent({
+      eventType: 'BIN_MOVE',
+      entityType: 'StockMovement',
+      entityId: result.outMove.id,
+      actorId: req.user?.id,
+      payload: { productId, warehouseId, fromBinId, toBinId, lotId: lotId || null, qty: numericQty, notes: notes || null },
+      sourceIp: req.ip,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to move stock between bins' });
+  }
+}
+
 async function listTransfers(_req, res) {
   const transfers = await prisma.stockTransfer.findMany({
     include: {
@@ -703,6 +737,7 @@ module.exports = {
   getValuation,
   listMovements,
   adjustStock,
+  moveBetweenBins,
   listTransfers,
   createTransfer,
   shipTransfer,

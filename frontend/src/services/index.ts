@@ -68,6 +68,7 @@ export const inventoryService = {
   movements: (params?: { productId?: string; limit?: number }) =>
     api.get('/inventory/movements', { params }).then((r) => r.data),
   adjustStock: (data: object) => api.post('/inventory/adjustments', data).then((r) => r.data),
+  moveBetweenBins: (data: object) => api.post('/inventory/bin-moves', data).then((r) => r.data),
   transfers: () => api.get('/inventory/transfers').then((r) => r.data),
   createTransfer: (data: object) => api.post('/inventory/transfers', data).then((r) => r.data),
   shipTransfer: (id: string) => api.post(`/inventory/transfers/${id}/ship`).then((r) => r.data),

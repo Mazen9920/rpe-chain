@@ -113,4 +113,121 @@ async function recordMovement(params, tx) {
   return tx ? exec(tx) : prisma.$transaction(exec);
 }
 
-module.exports = { recordMovement };
+/**
+ * Move stock from one bin to another within the SAME warehouse.
+ * - Does NOT change the per-warehouse StockLevel total.
+ * - Updates BinStockLevel for both bins.
+ * - Appends two StockMovement rows with reasonCode BIN_MOVE:
+ *     leg 1: -qty on fromBin
+ *     leg 2: +qty on toBin
+ * - If a lot is provided, that lot's currentBinId is updated to the destination bin.
+ */
+async function binMove(params, tx) {
+  const exec = async (client) => {
+    const {
+      productId,
+      warehouseId,
+      fromBinId,
+      toBinId,
+      lotId,
+      qty,
+      operatorId,
+      notes,
+    } = params;
+
+    if (!productId || !warehouseId || !fromBinId || !toBinId) {
+      throw new Error('productId, warehouseId, fromBinId, and toBinId are required');
+    }
+    if (fromBinId === toBinId) {
+      throw new Error('Source and destination bins must differ');
+    }
+    const moveQty = Math.abs(Number(qty));
+    if (!Number.isFinite(moveQty) || moveQty <= 0) {
+      throw new Error('qty must be a positive number');
+    }
+
+    const [fromBin, toBin] = await Promise.all([
+      client.binLocation.findUnique({ where: { id: fromBinId } }),
+      client.binLocation.findUnique({ where: { id: toBinId } }),
+    ]);
+    if (!fromBin || !toBin) throw new Error('Bin not found');
+    if (fromBin.warehouseId !== warehouseId || toBin.warehouseId !== warehouseId) {
+      throw new Error('Both bins must belong to the same warehouse as the move');
+    }
+
+    const fromLevel = await client.binStockLevel.findUnique({
+      where: { productId_binId: { productId, binId: fromBinId } },
+    });
+    if (!fromLevel || fromLevel.onHand < moveQty) {
+      throw new Error('Insufficient stock in source bin');
+    }
+
+    // Decrement source bin
+    await client.binStockLevel.update({
+      where: { id: fromLevel.id },
+      data: { onHand: fromLevel.onHand - moveQty, version: { increment: 1 } },
+    });
+
+    // Increment destination bin (upsert)
+    const toLevel = await client.binStockLevel.findUnique({
+      where: { productId_binId: { productId, binId: toBinId } },
+    });
+    if (toLevel) {
+      await client.binStockLevel.update({
+        where: { id: toLevel.id },
+        data: { onHand: toLevel.onHand + moveQty, version: { increment: 1 } },
+      });
+    } else {
+      await client.binStockLevel.create({
+        data: { productId, warehouseId, binId: toBinId, onHand: moveQty },
+      });
+    }
+
+    // Append two ledger entries
+    const sourceDocId = `BMV-${Date.now()}`;
+    const outMove = await client.stockMovement.create({
+      data: {
+        productId,
+        warehouseId,
+        binId: fromBinId,
+        lotId: lotId || null,
+        qty: -moveQty,
+        direction: 'OUT',
+        reasonCode: 'BIN_MOVE',
+        sourceDocType: 'BIN_MOVE',
+        sourceDocId,
+        operatorId,
+        notes,
+      },
+    });
+    const inMove = await client.stockMovement.create({
+      data: {
+        productId,
+        warehouseId,
+        binId: toBinId,
+        lotId: lotId || null,
+        qty: moveQty,
+        direction: 'IN',
+        reasonCode: 'BIN_MOVE',
+        sourceDocType: 'BIN_MOVE',
+        sourceDocId,
+        operatorId,
+        notes,
+      },
+    });
+
+    // If a lot moved entirely, update its currentBinId to destination.
+    if (lotId) {
+      await client.lot.update({
+        where: { id: lotId },
+        data: { currentBinId: toBinId },
+      });
+    }
+
+    return { sourceDocId, outMove, inMove };
+  };
+
+  return tx ? exec(tx) : prisma.$transaction(exec);
+}
+
+module.exports = { recordMovement, binMove };
