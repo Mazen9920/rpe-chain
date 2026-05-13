@@ -19,6 +19,8 @@ const apInvoiceRoutes = require('./routes/apInvoice.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const apAgingRoutes = require('./routes/apAging.routes');
 const creditNoteRoutes = require('./routes/creditNote.routes');
+const customerRoutes = require('./routes/customer.routes');
+const salesOrderRoutes = require('./routes/salesOrder.routes');
 
 const app = express();
 
@@ -45,6 +47,8 @@ app.use('/api/ap/invoices', apInvoiceRoutes);
 app.use('/api/ap/payments', paymentRoutes);
 app.use('/api/ap/aging', apAgingRoutes);
 app.use('/api/ap/credit-notes', creditNoteRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/sales-orders', salesOrderRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'rpe-supply-api' }));

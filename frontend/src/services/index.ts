@@ -147,7 +147,64 @@ export const goodsReceiptService = {
 export const shipmentService = {
   list: (params?: object) => api.get('/shipments', { params }).then((r) => r.data),
   getById: (id: string) => api.get(`/shipments/${id}`).then((r) => r.data),
-  create: (data: object) => api.post('/shipments', data).then((r) => r.data),
+  deliver: (id: string, data?: { deliveredAt?: string; location?: string }) =>
+    api.post(`/shipments/${id}/deliver`, data ?? {}).then((r) => r.data),
+  void: (id: string, reason: string) =>
+    api.post(`/shipments/${id}/void`, { reason }).then((r) => r.data),
+};
+
+// ── Section 6 — Fulfillment ──────────────────────────────────────────────
+import type {
+  Customer,
+  CustomerContact,
+  CustomerListResponse,
+  SalesOrder,
+  SOListResponse,
+  SOKpis,
+  CreateSOPayload,
+  ShipPayload,
+  PickPayload,
+} from '../types/fulfillment';
+
+export const customerService = {
+  list: (params?: { search?: string; isActive?: boolean; limit?: number; offset?: number }) =>
+    api.get<CustomerListResponse>('/customers', { params }).then((r) => r.data),
+  getById: (id: string) => api.get<Customer>(`/customers/${id}`).then((r) => r.data),
+  create: (data: Partial<Customer>) =>
+    api.post<Customer>('/customers', data).then((r) => r.data),
+  update: (id: string, data: Partial<Customer>) =>
+    api.patch<Customer>(`/customers/${id}`, data).then((r) => r.data),
+  deactivate: (id: string) => api.delete(`/customers/${id}`),
+  contacts: {
+    add: (customerId: string, data: Partial<CustomerContact>) =>
+      api.post<CustomerContact>(`/customers/${customerId}/contacts`, data).then((r) => r.data),
+    update: (customerId: string, contactId: string, data: Partial<CustomerContact>) =>
+      api.patch<CustomerContact>(`/customers/${customerId}/contacts/${contactId}`, data).then((r) => r.data),
+    setPrimary: (customerId: string, contactId: string) =>
+      api.post<CustomerContact>(`/customers/${customerId}/contacts/${contactId}/primary`).then((r) => r.data),
+    delete: (customerId: string, contactId: string) =>
+      api.delete(`/customers/${customerId}/contacts/${contactId}`),
+  },
+};
+
+export const salesOrderService = {
+  list: (params?: { search?: string; status?: string; customerId?: string; warehouseId?: string; limit?: number; offset?: number }) =>
+    api.get<SOListResponse>('/sales-orders', { params }).then((r) => r.data),
+  kpis: () => api.get<SOKpis>('/sales-orders/kpis').then((r) => r.data),
+  getById: (id: string) => api.get<SalesOrder>(`/sales-orders/${id}`).then((r) => r.data),
+  create: (data: CreateSOPayload) =>
+    api.post<SalesOrder>('/sales-orders', data).then((r) => r.data),
+  update: (id: string, data: Partial<SalesOrder>) =>
+    api.patch<SalesOrder>(`/sales-orders/${id}`, data).then((r) => r.data),
+  confirm: (id: string) => api.post<SalesOrder>(`/sales-orders/${id}/confirm`).then((r) => r.data),
+  allocate: (id: string) => api.post<SalesOrder>(`/sales-orders/${id}/allocate`).then((r) => r.data),
+  pick: (id: string, data: PickPayload) =>
+    api.post<SalesOrder>(`/sales-orders/${id}/pick`, data).then((r) => r.data),
+  pack: (id: string) => api.post<SalesOrder>(`/sales-orders/${id}/pack`).then((r) => r.data),
+  ship: (id: string, data: ShipPayload) =>
+    api.post<SalesOrder>(`/sales-orders/${id}/ship`, data).then((r) => r.data),
+  cancel: (id: string, reason: string) =>
+    api.post<SalesOrder>(`/sales-orders/${id}/cancel`, { reason }).then((r) => r.data),
 };
 
 export const inventoryService = {

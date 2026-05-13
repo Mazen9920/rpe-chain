@@ -44,6 +44,8 @@ model User {
   voidedInvoices     SupplierInvoice[] @relation("InvoiceVoidedBy")
   createdPayments    Payment[]         @relation("PaymentCreatedBy")
   voidedPayments     Payment[]         @relation("PaymentVoidedBy")
+  createdCustomers   Customer[]        @relation("CustomerCreatedBy")
+  createdSalesOrders SalesOrder[]      @relation("SalesOrderCreatedBy")
 }
 
 enum Role {
@@ -124,6 +126,7 @@ model Product {
   bomLinesAsComponent BomLine[]         @relation("BomComponentProduct")
   productionOrders    ProductionOrder[]
   productionOrderLines ProductionOrderLine[]
+  salesOrderLines     SalesOrderLine[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -158,6 +161,8 @@ model Warehouse {
   cycleCounts    CycleCount[]
   goodsReceipts  GoodsReceipt[]
   productionOrders ProductionOrder[]
+  salesOrders    SalesOrder[]
+  shipments      Shipment[]
 }
 
 model WarehouseZone {
@@ -877,25 +882,93 @@ model PaymentApplication {
 
 // ─── Sales & Fulfillment ──────────────────────────────────────────────────────
 
+enum PaymentTerms {
+  NET_15
+  NET_30
+  NET_60
+  NET_90
+  COD
+  PREPAID
+}
+
+model Customer {
+  id              String        @id @default(uuid())
+  code            String        @unique
+  name            String
+  email           String?
+  phone           String?
+  billingAddress  String?
+  shippingAddress String?
+  taxId           String?
+  currency        String        @default("USD")
+  paymentTerms    PaymentTerms  @default(NET_30)
+  creditLimit     Decimal?      @db.Decimal(14, 2)
+  notes           String?
+  isActive        Boolean       @default(true)
+  createdById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  createdBy   User?              @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  contacts    CustomerContact[]
+  salesOrders SalesOrder[]
+
+  @@index([isActive])
+}
+
+model CustomerContact {
+  id         String   @id @default(uuid())
+  customerId String
+  name       String
+  email      String?
+  phone      String?
+  role       String?
+  isPrimary  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
 model SalesOrder {
   id            String      @id @default(uuid())
   orderNumber   String      @unique
   source        String      @default("MANUAL") // SHOPIFY | MANUAL | B2B
   externalId    String?     // Shopify order ID
+  customerId    String?
   customerName  String
   customerEmail String?
+  warehouseId   String?
   status        SOStatus    @default(RECEIVED)
   totalAmount   Decimal     @default(0) @db.Decimal(14, 2)
   currency      String      @default("USD")
+  notes         String?
+  createdById   String?
+  confirmedAt   DateTime?
+  allocatedAt   DateTime?
+  pickedAt      DateTime?
+  packedAt      DateTime?
+  shippedAt     DateTime?
+  deliveredAt   DateTime?
+  cancelledAt   DateTime?
+  cancelReason  String?
   orderedAt     DateTime    @default(now())
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
+  customer  Customer?  @relation(fields: [customerId], references: [id])
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+  createdBy User?      @relation("SalesOrderCreatedBy", fields: [createdById], references: [id])
   lines     SalesOrderLine[]
   shipments Shipment[]
 
   @@index([source, externalId])
   @@index([status])
+  @@index([customerId])
 }
 
 enum SOStatus {
@@ -915,17 +988,25 @@ model SalesOrderLine {
   salesOrderId String
   productId    String
   qty          Int
+  qtyAllocated Int      @default(0)
+  qtyPicked    Int      @default(0)
   qtyShipped   Int      @default(0)
   unitPrice    Decimal  @db.Decimal(14, 4)
   status       String   @default("OPEN")
+  notes        String?
 
   salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id])
+
+  @@index([salesOrderId])
+  @@index([productId])
 }
 
 model Shipment {
   id               String         @id @default(uuid())
   shipmentNumber   String         @unique
   salesOrderId     String?
+  warehouseId      String?
   carrier          String?        // BOSTA | DHL | ARAMEX | OTHER
   carrierRef       String?
   trackingNumber   String?
@@ -933,16 +1014,22 @@ model Shipment {
   dispatchedAt     DateTime?
   estimatedArrival DateTime?
   deliveredAt      DateTime?
+  voidedAt         DateTime?
+  voidReason       String?
   notes            String?
   createdById      String
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
   salesOrder SalesOrder? @relation(fields: [salesOrderId], references: [id])
+  warehouse  Warehouse?  @relation(fields: [warehouseId], references: [id])
   createdBy  User        @relation(fields: [createdById], references: [id])
 
   lines          ShipmentLine[]
   trackingEvents TrackingEvent[]
+
+  @@index([salesOrderId])
+  @@index([status])
 }
 
 enum ShipmentStatus {
@@ -952,16 +1039,23 @@ enum ShipmentStatus {
   DELIVERED
   FAILED
   RETURNED
+  VOIDED
 }
 
 model ShipmentLine {
-  id         String @id @default(uuid())
-  shipmentId String
-  productId  String
-  qty        Int
+  id                String   @id @default(uuid())
+  shipmentId        String
+  productId         String
+  salesOrderLineId  String?
+  qty               Int
+  unitPrice         Decimal? @db.Decimal(14, 2)
+  unitCost          Decimal? @db.Decimal(14, 4)
 
   shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   product  Product  @relation(fields: [productId], references: [id])
+
+  @@index([shipmentId])
+  @@index([productId])
 }
 
 model TrackingEvent {

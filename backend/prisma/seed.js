@@ -34,6 +34,7 @@ async function main() {
     { email: 'procurement@rpechain.com', name: 'Procurement Lead', role: 'PROCUREMENT' },
     { email: 'warehouse@rpechain.com',   name: 'Warehouse Operator', role: 'WAREHOUSE' },
     { email: 'finance@rpechain.com',     name: 'Finance Analyst', role: 'FINANCE' },
+    { email: 'sales@rpechain.com',       name: 'Sales Rep', role: 'SALES' },
   ]) {
     await prisma.user.upsert({ where: { email: u.email }, update: {}, create: { ...u, password: hashed } });
   }
@@ -565,6 +566,106 @@ async function main() {
     }, actor, '127.0.0.1');
 
     console.log('   AP: 4 invoices + 1 credit note + 2 payments created');
+  }
+
+  // ── Fulfillment v1.0: customers + sales orders ─────────────────────────
+  {
+    const customerSvc = require('../src/services/customer.service');
+    const soSvc = require('../src/services/salesOrder.service');
+    const actor = { id: admin.id };
+
+    // 3 customers across regions
+    const acme = await customerSvc.createCustomer({
+      code: 'CUST-ACME-001',
+      name: 'ACME Trading LLC',
+      email: 'orders@acme-trading.example',
+      phone: '+971-4-555-0100',
+      currency: 'USD',
+      paymentTerms: 'NET_30',
+      billingAddress: 'Sheikh Zayed Rd, Dubai, UAE',
+      shippingAddress: 'JAFZA Warehouse 12, Dubai',
+      taxId: 'TRN-100200300400',
+      creditLimit: 50000,
+    }, actor, '127.0.0.1').catch((e) => {
+      if (e.code === 'DUPLICATE_CUSTOMER') return prisma.customer.findUnique({ where: { code: 'CUST-ACME-001' } });
+      throw e;
+    });
+
+    const pharma = await customerSvc.createCustomer({
+      code: 'CUST-PHARMA-002',
+      name: 'Pharma Global Ltd',
+      email: 'procurement@pharma-global.example',
+      currency: 'GBP',
+      paymentTerms: 'NET_60',
+      billingAddress: '221B Baker St, London, UK',
+      creditLimit: 100000,
+    }, actor, '127.0.0.1').catch((e) => {
+      if (e.code === 'DUPLICATE_CUSTOMER') return prisma.customer.findUnique({ where: { code: 'CUST-PHARMA-002' } });
+      throw e;
+    });
+
+    const medcorp = await customerSvc.createCustomer({
+      code: 'CUST-MEDCORP-003',
+      name: 'MedCorp Egypt',
+      email: 'orders@medcorp.example',
+      currency: 'EGP',
+      paymentTerms: 'COD',
+      billingAddress: 'Smart Village, Cairo, Egypt',
+    }, actor, '127.0.0.1').catch((e) => {
+      if (e.code === 'DUPLICATE_CUSTOMER') return prisma.customer.findUnique({ where: { code: 'CUST-MEDCORP-003' } });
+      throw e;
+    });
+
+    // Add a couple contacts to ACME
+    try {
+      await customerSvc.addContact(acme.id, { name: 'Sarah Johnson', role: 'Buyer', email: 'sarah@acme-trading.example', phone: '+971-50-1111111', isPrimary: true }, actor, '127.0.0.1');
+      await customerSvc.addContact(acme.id, { name: 'Omar Al-Rashid', role: 'AP Manager', email: 'omar@acme-trading.example' }, actor, '127.0.0.1');
+    } catch { /* ignore on rerun */ }
+
+    // 4 sales orders in varied states (only if none exist)
+    const existingSO = await prisma.salesOrder.count({ where: { source: 'MANUAL' } });
+    if (existingSO === 0) {
+      const ffr = await prisma.product.findUnique({ where: { sku: 'RPE-FFR-6800' } });
+      const n95 = await prisma.product.findUnique({ where: { sku: 'RPE-DSP-N95' } });
+
+      // SO1 — RECEIVED, ACME, 10 FFR @ 120
+      await soSvc.createSalesOrder({
+        customerId: acme.id,
+        warehouseId: whDXB.id,
+        currency: 'USD',
+        notes: '[seed:so] New inbound order',
+        lines: [{ productId: ffr.id, qty: 10, unitPrice: 120 }],
+      }, actor, '127.0.0.1');
+
+      // SO2 — CONFIRMED, Pharma, 5 FFR @ 110
+      const so2 = await soSvc.createSalesOrder({
+        customerId: pharma.id,
+        warehouseId: whUK.id,
+        currency: 'GBP',
+        notes: '[seed:so] Awaiting allocation',
+        lines: [{ productId: ffr.id, qty: 5, unitPrice: 110 }],
+      }, actor, '127.0.0.1');
+      await soSvc.confirmOrder(so2.id, actor, '127.0.0.1');
+
+      // SO3 — ALLOCATED, MedCorp, 3 N95 @ 50 (try to allocate; if stock insufficient, skip)
+      const so3 = await soSvc.createSalesOrder({
+        customerId: medcorp.id,
+        warehouseId: whDXB.id,
+        currency: 'EGP',
+        notes: '[seed:so] Stock allocated',
+        lines: [{ productId: n95.id, qty: 3, unitPrice: 50 }],
+      }, actor, '127.0.0.1');
+      await soSvc.confirmOrder(so3.id, actor, '127.0.0.1');
+      try {
+        await soSvc.allocateOrder(so3.id, actor, '127.0.0.1');
+      } catch (e) {
+        console.warn(`   SO3 allocation skipped: ${e.message}`);
+      }
+
+      console.log('   Fulfillment: 3 customers + 3 sales orders (RECEIVED, CONFIRMED, ALLOCATED) created');
+    } else {
+      console.log('   Fulfillment: customers ensured; sales orders skipped (already present)');
+    }
   }
 
   console.log('✅ Seed complete.');

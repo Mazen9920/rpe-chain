@@ -83,10 +83,10 @@ async function createCostLayer(params, tx = prisma) {
  * @param {string} [params.salesOrderId]
  * @returns {Promise<{totalCogs: number, postings: Array, layersConsumed: number}>}
  */
-async function depleteFifo({ productId, warehouseId, qty, shipmentId, salesOrderId }) {
+async function depleteFifo({ productId, warehouseId, qty, shipmentId, salesOrderId }, externalTx) {
   if (qty <= 0) throw new Error('Depletion qty must be positive');
 
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx) => {
     // 1. Lock & fetch active layers in FIFO order (oldest receivedDate first).
     //    Postgres takes row-level locks via SELECT ... FOR UPDATE which Prisma
     //    achieves with $queryRaw. Using ordered scan for simplicity.
@@ -147,7 +147,9 @@ async function depleteFifo({ productId, warehouseId, qty, shipmentId, salesOrder
     }
 
     return { totalCogs, postings, layersConsumed: postings.length };
-  });
+  };
+
+  return externalTx ? run(externalTx) : prisma.$transaction(run);
 }
 
 /**
@@ -156,8 +158,8 @@ async function depleteFifo({ productId, warehouseId, qty, shipmentId, salesOrder
  * — preserving the append-only property. The original COGS posting stays in place;
  * a counter-posting is recorded.
  */
-async function reverseFifo({ productId, warehouseId, originalCogsPostingId, qty }) {
-  return prisma.$transaction(async (tx) => {
+async function reverseFifo({ productId, warehouseId, originalCogsPostingId, qty }, externalTx) {
+  const run = async (tx) => {
     const original = await tx.cogsPosting.findUnique({
       where: { id: originalCogsPostingId },
       include: { layer: true },
@@ -192,7 +194,9 @@ async function reverseFifo({ productId, warehouseId, originalCogsPostingId, qty 
         cogsAmount: -qty * Number(original.unitCostAtConsumption),
       },
     });
-  });
+  };
+
+  return externalTx ? run(externalTx) : prisma.$transaction(run);
 }
 
 /**

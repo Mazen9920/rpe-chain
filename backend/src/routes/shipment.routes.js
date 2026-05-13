@@ -1,13 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../controllers/shipment.controller');
-const { authenticate } = require('../middleware/auth.middleware');
+const { authenticate, requireRole } = require('../middleware/auth.middleware');
+
+const SALES_READ = ['ADMIN', 'SALES', 'WAREHOUSE', 'FINANCE'];
+const FULFILLMENT_WRITE = ['ADMIN', 'SALES', 'WAREHOUSE'];
+const SALES_ADMIN = ['ADMIN'];
 
 router.use(authenticate);
 
-router.get('/', ctrl.list);
-router.get('/:id', ctrl.getById);
-router.post('/', ctrl.create);
-router.patch('/:id/status', ctrl.updateStatus);
+router.get('/', requireRole(...SALES_READ), ctrl.list);
+router.get('/:id', requireRole(...SALES_READ), ctrl.getById);
+router.post('/:id/deliver', requireRole(...FULFILLMENT_WRITE), ctrl.deliver);
+router.post('/:id/void', requireRole(...SALES_ADMIN), ctrl.void);
 
 module.exports = router;

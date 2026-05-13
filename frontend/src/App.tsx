@@ -13,6 +13,11 @@ import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage';
 import GoodsReceiptsPage from './pages/GoodsReceiptsPage';
 import GoodsReceiptDetailPage from './pages/GoodsReceiptDetailPage';
 import ShipmentsPage from './pages/ShipmentsPage';
+import ShipmentDetailPage from './pages/ShipmentDetailPage';
+import CustomersPage from './pages/CustomersPage';
+import CustomerDetailPage from './pages/CustomerDetailPage';
+import SalesOrdersPage from './pages/SalesOrdersPage';
+import SalesOrderDetailPage from './pages/SalesOrderDetailPage';
 import AccountsPayablePage from './pages/AccountsPayablePage';
 import SupplierInvoiceDetailPage from './pages/SupplierInvoiceDetailPage';
 import PaymentDetailPage from './pages/PaymentDetailPage';
@@ -42,6 +47,11 @@ export default function App() {
               <Route path="/ap/invoices/:id" element={<SupplierInvoiceDetailPage />} />
               <Route path="/ap/payments/:id" element={<PaymentDetailPage />} />
               <Route path="/shipments" element={<ShipmentsPage />} />
+              <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
+              <Route path="/customers" element={<CustomersPage />} />
+              <Route path="/customers/:id" element={<CustomerDetailPage />} />
+              <Route path="/sales-orders" element={<SalesOrdersPage />} />
+              <Route path="/sales-orders/:id" element={<SalesOrderDetailPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
