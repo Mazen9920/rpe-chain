@@ -10,9 +10,11 @@ const DIRECTION = {
   RECEIPT: 'IN',
   RETURN: 'IN',
   QA_RELEASE: 'IN',
+  PRODUCTION_OUTPUT: 'IN',
   SHIPMENT: 'OUT',
   SCRAP: 'OUT',
   QA_HOLD: 'OUT',
+  PRODUCTION_CONSUME: 'OUT',
   ADJUSTMENT: 'IN', // sign of qty determines direction
   TRANSFER: 'IN', // sign of qty determines direction
 };
