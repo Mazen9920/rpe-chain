@@ -4,7 +4,7 @@ import { Edit2, Plus, Trash2, X } from 'lucide-react';
 import { inventoryService } from '../../services';
 import type { Warehouse, WarehouseFormInput } from '../../types/inventory';
 
-const emptyForm: WarehouseFormInput = { code: '', name: '', address: '', taxJurisdiction: '' };
+const emptyForm: WarehouseFormInput = { code: '', name: '', address: '', taxJurisdiction: '', country: '', currency: '' };
 
 function getErrorMessage(error: unknown) {
   if (typeof error === 'object' && error && 'response' in error) {
@@ -39,6 +39,8 @@ export default function WarehouseManageModal({ open, onClose }: WarehouseManageM
         name: editing.name,
         address: editing.address ?? '',
         taxJurisdiction: editing.taxJurisdiction ?? '',
+        country: editing.country ?? '',
+        currency: editing.currency ?? '',
       });
     } else {
       setForm(emptyForm);
@@ -72,6 +74,8 @@ export default function WarehouseManageModal({ open, onClose }: WarehouseManageM
       name: form.name.trim(),
       address: form.address || null,
       taxJurisdiction: form.taxJurisdiction || null,
+      country: form.country || null,
+      currency: form.currency || null,
     });
   };
 
@@ -89,12 +93,14 @@ export default function WarehouseManageModal({ open, onClose }: WarehouseManageM
         <div className="grid max-h-[calc(90vh-73px)] grid-cols-1 overflow-y-auto lg:grid-cols-[1fr_360px]">
           <div className="overflow-x-auto border-b border-slate-100 lg:border-b-0 lg:border-r">
             <table className="w-full text-sm">
-              <thead><tr className="bg-slate-50">{['Code', 'Name', 'Tax', 'Address', 'Actions'].map((heading) => <th key={heading} className="text-left px-5 py-3 text-slate-500 font-medium">{heading}</th>)}</tr></thead>
+              <thead><tr className="bg-slate-50">{['Code', 'Name', 'Country', 'Currency', 'Tax', 'Address', 'Actions'].map((heading) => <th key={heading} className="text-left px-5 py-3 text-slate-500 font-medium">{heading}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? Array.from({ length: 3 }).map((_, row) => <tr key={row}>{Array.from({ length: 5 }).map((_, cell) => <td key={cell} className="px-5 py-3"><div className="h-4 bg-slate-100 rounded animate-pulse" /></td>)}</tr>) : warehouses.map((warehouse) => (
                   <tr key={warehouse.id} className="hover:bg-slate-50">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500">{warehouse.code}</td>
                     <td className="px-5 py-3 font-medium text-slate-800">{warehouse.name}</td>
+                    <td className="px-5 py-3 text-slate-600">{warehouse.country ?? '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">{warehouse.currency ?? '—'}</td>
                     <td className="px-5 py-3 text-slate-600">{warehouse.taxJurisdiction ?? '—'}</td>
                     <td className="px-5 py-3 text-slate-600">{warehouse.address ?? '—'}</td>
                     <td className="px-5 py-3">
@@ -118,6 +124,8 @@ export default function WarehouseManageModal({ open, onClose }: WarehouseManageM
             <label className="block space-y-1 text-sm"><span className="font-medium text-slate-700">Code</span><input required value={form.code} onChange={(e) => setForm((current) => ({ ...current, code: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" /></label>
             <label className="block space-y-1 text-sm"><span className="font-medium text-slate-700">Name</span><input required value={form.name} onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" /></label>
             <label className="block space-y-1 text-sm"><span className="font-medium text-slate-700">Tax Jurisdiction</span><input value={form.taxJurisdiction ?? ''} onChange={(e) => setForm((current) => ({ ...current, taxJurisdiction: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" /></label>
+            <label className="block space-y-1 text-sm"><span className="font-medium text-slate-700">Country</span><input value={form.country ?? ''} placeholder="e.g. AE, GB, US" onChange={(e) => setForm((current) => ({ ...current, country: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" /></label>
+            <label className="block space-y-1 text-sm"><span className="font-medium text-slate-700">Currency</span><input value={form.currency ?? ''} placeholder="e.g. AED, GBP, USD" onChange={(e) => setForm((current) => ({ ...current, currency: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" /></label>
             <label className="block space-y-1 text-sm"><span className="font-medium text-slate-700">Address</span><textarea rows={3} value={form.address ?? ''} onChange={(e) => setForm((current) => ({ ...current, address: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" /></label>
             <button disabled={saveMutation.isPending} className="w-full rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60">{saveMutation.isPending ? 'Saving...' : editing ? 'Save Warehouse' : 'Create Warehouse'}</button>
           </form>

@@ -125,7 +125,7 @@ export default function StockAdjustmentModal({ open, initialProductId, initialWa
 
           <label className="block space-y-1 text-sm">
             <span className="font-medium text-slate-700">Bin <span className="font-normal text-slate-400">(optional)</span></span>
-            <select value={form.binId ?? ''} onChange={(e) => setForm((f) => ({ ...f, binId: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" disabled={!form.warehouseId}>
+            <select aria-label="Select bin location" value={form.binId ?? ''} onChange={(e) => setForm((f) => ({ ...f, binId: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" disabled={!form.warehouseId}>
               <option value="">No specific bin</option>
               {bins.map((b) => <option key={b.id} value={b.id}>{b.code} · {b.binType}</option>)}
             </select>
@@ -133,7 +133,7 @@ export default function StockAdjustmentModal({ open, initialProductId, initialWa
 
           <label className="block space-y-1 text-sm">
             <span className="font-medium text-slate-700">Lot <span className="font-normal text-slate-400">(optional)</span></span>
-            <select value={form.lotId ?? ''} onChange={(e) => setForm((f) => ({ ...f, lotId: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" disabled={!form.productId}>
+            <select aria-label="Select lot" value={form.lotId ?? ''} onChange={(e) => setForm((f) => ({ ...f, lotId: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" disabled={!form.productId}>
               <option value="">No lot</option>
               {lots.map((l) => <option key={l.id} value={l.id}>{l.lotNumber}{l.expiryDate ? ` · exp ${new Date(l.expiryDate).toLocaleDateString()}` : ''}</option>)}
             </select>

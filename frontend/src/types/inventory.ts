@@ -195,6 +195,8 @@ export interface WarehouseFormInput {
   name: string;
   address?: string | null;
   taxJurisdiction?: string | null;
+  country?: string | null;
+  currency?: string | null;
 }
 
 export interface StockAdjustmentInput {
