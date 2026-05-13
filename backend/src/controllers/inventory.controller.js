@@ -940,10 +940,21 @@ async function listOpenAlerts(req, res) {
     where: { status: 'OPEN' },
     take: limit,
     orderBy: [{ severity: 'desc' }, { createdAt: 'desc' }],
-    include: { product: { select: { id: true, sku: true, name: true } } },
   });
+  const productIds = [...new Set(alerts.map((alert) => alert.productId).filter(Boolean))];
+  const products = productIds.length
+    ? await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, sku: true, name: true },
+      })
+    : [];
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const alertsWithProducts = alerts.map((alert) => ({
+    ...alert,
+    product: alert.productId ? productById.get(alert.productId) ?? null : null,
+  }));
   const counts = await prisma.alert.groupBy({ by: ['severity'], where: { status: 'OPEN' }, _count: { _all: true } });
-  res.json({ alerts, counts: Object.fromEntries(counts.map((c) => [c.severity, c._count._all])), total: alerts.length });
+  res.json({ alerts: alertsWithProducts, counts: Object.fromEntries(counts.map((c) => [c.severity, c._count._all])), total: alerts.length });
 }
 
 async function acknowledgeAlert(req, res) {
