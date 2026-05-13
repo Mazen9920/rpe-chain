@@ -42,5 +42,6 @@ router.get('/cycle-counts', ctrl.listCycleCounts);
 router.post('/cycle-counts', requireRole('ADMIN', 'WAREHOUSE'), ctrl.createCycleCount);
 router.put('/cycle-counts/:id/lines/:lineId', requireRole('ADMIN', 'WAREHOUSE'), ctrl.updateCycleCountLine);
 router.post('/cycle-counts/:id/post', requireRole('ADMIN', 'WAREHOUSE'), ctrl.postCycleCount);
+router.post('/cycle-counts/:id/cancel', requireRole('ADMIN', 'WAREHOUSE'), ctrl.cancelCycleCount);
 
 module.exports = router;

@@ -794,6 +794,26 @@ async function postCycleCount(req, res) {
   res.json(result);
 }
 
+async function cancelCycleCount(req, res) {
+  const count = await prisma.cycleCount.findUnique({ where: { id: req.params.id } });
+  if (!count) return res.status(404).json({ error: 'Cycle count not found' });
+  if (count.status !== 'OPEN') return res.status(409).json({ error: 'Only OPEN cycle counts can be cancelled' });
+
+  const updated = await prisma.cycleCount.update({
+    where: { id: count.id },
+    data: { status: 'CANCELLED' },
+  });
+  await logEvent({
+    eventType: 'CYCLE_COUNT_CANCELLED',
+    entityType: 'CycleCount',
+    entityId: updated.id,
+    actorId: req.user?.id,
+    payload: { after: updated },
+    sourceIp: req.ip,
+  });
+  res.json(updated);
+}
+
 module.exports = {
   listWarehouses,
   getWarehouse,
@@ -824,4 +844,5 @@ module.exports = {
   createCycleCount,
   updateCycleCountLine,
   postCycleCount,
+  cancelCycleCount,
 };
