@@ -375,6 +375,107 @@ async function main() {
     }
   }
 
+  // ── Section 4: Procurement demo POs ────────────────────────────────────
+  // Idempotent: only create on a clean run (no existing PO matching marker note).
+  const existingDemoPO = await prisma.purchaseOrder.findFirst({ where: { notes: { contains: '[seed:procurement]' } } });
+  if (!existingDemoPO) {
+    const hmrSmall = await prisma.product.findUnique({ where: { sku: 'RPE-HMR-7501' } });
+    const flt = await prisma.product.findUnique({ where: { sku: 'RPE-FLT-2091' } });
+    const day = 86400000;
+    const now = Date.now();
+
+    // PO-A: DRAFT (3M, USD)
+    await prisma.purchaseOrder.create({
+      data: {
+        poNumber: `PO-SEED-A-${Date.now()}`,
+        supplierId: sup3M.id,
+        createdById: admin.id,
+        currency: 'USD',
+        expectedDate: new Date(now + 14 * day),
+        notes: '[seed:procurement] Draft PO for 3M',
+        totalAmount: 18.5 * 100,
+        lines: { create: [{ productId: hmrSmall.id, qtyOrdered: 100, unitPrice: 18.5 }] },
+      },
+    });
+
+    // PO-B: SENT (Honeywell, overdue)
+    await prisma.purchaseOrder.create({
+      data: {
+        poNumber: `PO-SEED-B-${Date.now()}`,
+        supplierId: supHoneywell.id,
+        createdById: admin.id,
+        approvedById: admin.id,
+        approvedAt: new Date(now - 21 * day),
+        submittedAt: new Date(now - 25 * day),
+        sentAt: new Date(now - 20 * day),
+        status: 'SENT',
+        currency: 'USD',
+        expectedDate: new Date(now - 3 * day),
+        notes: '[seed:procurement] Sent overdue PO',
+        totalAmount: 165 * 25,
+        lines: { create: [{ productId: (await prisma.product.findUnique({ where: { sku: 'RPE-FFR-6800' } })).id, qtyOrdered: 25, unitPrice: 165 }] },
+      },
+    });
+
+    // PO-C: SENT for receiving demo (3M, USD)
+    await prisma.purchaseOrder.create({
+      data: {
+        poNumber: `PO-SEED-C-${Date.now()}`,
+        supplierId: sup3M.id,
+        createdById: admin.id,
+        approvedById: admin.id,
+        approvedAt: new Date(now - 7 * day),
+        submittedAt: new Date(now - 8 * day),
+        sentAt: new Date(now - 5 * day),
+        status: 'SENT',
+        currency: 'USD',
+        expectedDate: new Date(now + 5 * day),
+        notes: '[seed:procurement] Ready to receive',
+        totalAmount: 4.25 * 500,
+        lines: { create: [{ productId: flt.id, qtyOrdered: 500, unitPrice: 4.25 }] },
+      },
+    });
+
+    // PO-D: CANCELLED
+    await prisma.purchaseOrder.create({
+      data: {
+        poNumber: `PO-SEED-D-${Date.now()}`,
+        supplierId: supDraeger.id,
+        createdById: admin.id,
+        status: 'CANCELLED',
+        currency: 'EUR',
+        fxRate: 1.08,
+        cancelledAt: new Date(now - 2 * day),
+        cancelReason: 'Demo: supplier substituted',
+        notes: '[seed:procurement] Cancelled PO',
+        totalAmount: 20 * 9,
+        lines: { create: [{ productId: hmrSmall.id, qtyOrdered: 20, unitPrice: 9 }] },
+      },
+    });
+
+    // PO-E: SENT (Gulf, AED, multi-currency demo)
+    await prisma.purchaseOrder.create({
+      data: {
+        poNumber: `PO-SEED-E-${Date.now()}`,
+        supplierId: supGulf.id,
+        createdById: admin.id,
+        approvedById: admin.id,
+        approvedAt: new Date(now - 2 * day),
+        submittedAt: new Date(now - 3 * day),
+        sentAt: new Date(now - 1 * day),
+        status: 'SENT',
+        currency: 'AED',
+        fxRate: 0.272,
+        expectedDate: new Date(now + 10 * day),
+        notes: '[seed:procurement] FX demo (AED → USD)',
+        totalAmount: 70 * 50,
+        lines: { create: [{ productId: hmrSmall.id, qtyOrdered: 50, unitPrice: 70 }] },
+      },
+    });
+
+    console.log('   Procurement: 5 demo POs created');
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Admin login: admin@rpechain.com / Admin@123');
   console.log('   Production login: production@rpechain.com / Prod@123');

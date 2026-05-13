@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Package, Users, ShoppingCart, Truck, Factory, LogOut } from 'lucide-react';
+import { LayoutDashboard, Package, Users, ShoppingCart, Truck, Factory, LogOut, PackageCheck } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import AlertsBell from './AlertsBell';
 
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/manufacturing', icon: Factory, label: 'Manufacturing' },
   { to: '/suppliers', icon: Users, label: 'Suppliers' },
   { to: '/orders', icon: ShoppingCart, label: 'Purchase Orders' },
+  { to: '/goods-receipts', icon: PackageCheck, label: 'Goods Receipts' },
   { to: '/shipments', icon: Truck, label: 'Shipments' },
 ];
 

@@ -27,7 +27,10 @@ model User {
 
   purchaseOrders     PurchaseOrder[] @relation("CreatedBy")
   approvedPOs        PurchaseOrder[] @relation("ApprovedBy")
-  goodsReceipts      GoodsReceipt[]
+  requestedPOs       PurchaseOrder[] @relation("RequestedBy")
+  goodsReceipts      GoodsReceipt[]  @relation("GoodsReceiptReceivedBy")
+  reversedReceipts   GoodsReceipt[]  @relation("GoodsReceiptReversedBy")
+  qaActionedReceiptLines GoodsReceiptLine[] @relation("GoodsReceiptLineQaBy")
   shipments          Shipment[]
   events             EventLog[]
   acknowledgedAlerts Alert[]
@@ -133,6 +136,8 @@ model Warehouse {
   currency        String   @default("USD")
   taxJurisdiction String?
   isActive        Boolean  @default(true)
+  lotPrefix       String?
+  defaultReceivingBinId String?
   createdAt       DateTime @default(now())
 
   stockLevels    StockLevel[]
@@ -140,11 +145,13 @@ model Warehouse {
   costLayers     CostLayer[]
   forecasts      Forecast[]
   zones          WarehouseZone[]
-  bins           BinLocation[]
+  bins           BinLocation[] @relation("WarehouseBins")
+  defaultReceivingBin BinLocation? @relation("WarehouseDefaultReceivingBin", fields: [defaultReceivingBinId], references: [id])
   binStockLevels BinStockLevel[]
   outgoingTransfers StockTransfer[] @relation("TransferSourceWarehouse")
   incomingTransfers StockTransfer[] @relation("TransferDestinationWarehouse")
   cycleCounts    CycleCount[]
+  goodsReceipts  GoodsReceipt[]
   productionOrders ProductionOrder[]
 }
 
@@ -175,12 +182,13 @@ model BinLocation {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
+  warehouse Warehouse      @relation("WarehouseBins", fields: [warehouseId], references: [id])
   zone      WarehouseZone? @relation(fields: [zoneId], references: [id])
   binStockLevels BinStockLevel[]
   stockMovements StockMovement[]
   lots      Lot[]
   cycleCountLines CycleCountLine[]
+  defaultReceivingForWarehouses Warehouse[] @relation("WarehouseDefaultReceivingBin")
 
   @@unique([warehouseId, code])
   @@index([warehouseId])
@@ -588,24 +596,31 @@ model LandedCostAllocation {
 // ─── Procurement ──────────────────────────────────────────────────────────────
 
 model PurchaseOrder {
-  id            String    @id @default(uuid())
-  poNumber      String    @unique
-  supplierId    String
-  status        POStatus  @default(DRAFT)
-  totalAmount   Decimal   @default(0) @db.Decimal(14, 2)
-  currency      String    @default("USD")
-  expectedDate  DateTime?
-  notes         String?
-  createdById   String
-  approvedById  String?
-  approvedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id              String    @id @default(uuid())
+  poNumber        String    @unique
+  supplierId      String
+  status          POStatus  @default(DRAFT)
+  totalAmount     Decimal   @default(0) @db.Decimal(14, 2)
+  currency        String    @default("USD")
+  fxRate          Decimal?  @db.Decimal(14, 6)
+  expectedDate    DateTime?
+  notes           String?
+  requestedById   String?
+  createdById     String
+  approvedById    String?
+  approvedAt      DateTime?
+  submittedAt     DateTime?
+  sentAt          DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
 
-  supplier   Supplier @relation(fields: [supplierId], references: [id])
-  createdBy  User     @relation("CreatedBy", fields: [createdById], references: [id])
-  approvedBy User?    @relation("ApprovedBy", fields: [approvedById], references: [id])
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  createdBy   User     @relation("CreatedBy", fields: [createdById], references: [id])
+  approvedBy  User?    @relation("ApprovedBy", fields: [approvedById], references: [id])
+  requestedBy User?    @relation("RequestedBy", fields: [requestedById], references: [id])
 
   lines               PurchaseOrderLine[]
   goodsReceipts       GoodsReceipt[]
@@ -613,6 +628,7 @@ model PurchaseOrder {
   landedCostAllocations LandedCostAllocation[]
 
   @@index([supplierId, status])
+  @@index([status, expectedDate])
 }
 
 enum POStatus {
@@ -623,6 +639,7 @@ enum POStatus {
   PARTIALLY_RECEIVED
   RECEIVED
   CANCELLED
+  CLOSED
 }
 
 model PurchaseOrderLine {
@@ -633,39 +650,59 @@ model PurchaseOrderLine {
   qtyReceived     Int      @default(0)
   unitPrice       Decimal  @db.Decimal(14, 4)
   expectedDate    DateTime?
+  notes           String?
   status          String   @default("OPEN") // OPEN | PARTIAL | COMPLETED | CANCELLED
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   product       Product       @relation(fields: [productId], references: [id])
 
   receiptLines GoodsReceiptLine[]
+
+  @@index([purchaseOrderId, status])
 }
 
 model GoodsReceipt {
-  id              String   @id @default(uuid())
-  receiptNumber   String   @unique
-  purchaseOrderId String
-  warehouseId     String
-  receivedAt      DateTime @default(now())
-  receivedById    String
-  status          String   @default("RECEIVED") // RECEIVED | QA_HOLD | COMPLETED
+  id               String   @id @default(uuid())
+  receiptNumber    String   @unique
+  purchaseOrderId  String
+  warehouseId      String
+  receivedAt       DateTime @default(now())
+  receivedById     String
+  status           String   @default("RECEIVED") // RECEIVED | QA_HOLD | COMPLETED | REVERSED
+  fxRateAtReceipt  Decimal? @db.Decimal(14, 6)
+  notes            String?
+  reversedAt       DateTime?
+  reversedById     String?
+  reverseReason    String?
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
-  receivedBy    User          @relation(fields: [receivedById], references: [id])
+  warehouse     Warehouse     @relation(fields: [warehouseId], references: [id])
+  receivedBy    User          @relation("GoodsReceiptReceivedBy", fields: [receivedById], references: [id])
+  reversedBy    User?         @relation("GoodsReceiptReversedBy", fields: [reversedById], references: [id])
 
   lines GoodsReceiptLine[]
+
+  @@index([purchaseOrderId])
+  @@index([warehouseId, receivedAt])
 }
 
 model GoodsReceiptLine {
-  id           String  @id @default(uuid())
-  receiptId    String
-  poLineId     String
-  qtyReceived  Int
-  lotId        String?
-  qaStatus     String  @default("RELEASED") // PENDING | RELEASED | REJECTED
+  id              String   @id @default(uuid())
+  receiptId       String
+  poLineId        String
+  qtyReceived     Int
+  lotId           String?
+  qaStatus        String   @default("RELEASED") // PENDING | RELEASED | REJECTED
+  qaActionedById  String?
+  qaActionedAt    DateTime?
+  qaNotes         String?
 
-  receipt GoodsReceipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  poLine  PurchaseOrderLine @relation(fields: [poLineId], references: [id])
+  receipt       GoodsReceipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  poLine        PurchaseOrderLine @relation(fields: [poLineId], references: [id])
+  qaActionedBy  User?             @relation("GoodsReceiptLineQaBy", fields: [qaActionedById], references: [id])
+
+  @@index([receiptId])
+  @@index([poLineId])
 }
 
 // ─── Accounts Payable ─────────────────────────────────────────────────────────

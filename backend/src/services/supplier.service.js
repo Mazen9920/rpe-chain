@@ -587,28 +587,109 @@ async function upsertPerformance(supplierId, data, actorId, sourceIp) {
 }
 
 async function recomputePerformance(supplierId, periodStart, periodEnd) {
-  // Real aggregation will land in Section 4 (Procurement + Receiving) once
-  // PurchaseOrder/Receipt data is populated. For now, return a graceful no-op
-  // so the UI surface is exercised end-to-end.
   const supplier = await prisma.supplier.findFirst({ where: { id: supplierId, deletedAt: null }, select: { id: true } });
   if (!supplier) bad('Supplier not found', 404);
-  const poCount = await prisma.purchaseOrder.count({ where: { supplierId } }).catch(() => 0);
-  const grnCount = await prisma.goodsReceipt.count({ where: { purchaseOrder: { supplierId } } }).catch(() => 0);
+
+  // Default the period to last 90 days if not provided.
+  const end = periodEnd ? new Date(periodEnd) : new Date();
+  const start = periodStart ? new Date(periodStart) : new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+  const poCount = await prisma.purchaseOrder.count({
+    where: { supplierId, createdAt: { gte: start, lte: end } },
+  });
+  const grnRows = await prisma.goodsReceipt.findMany({
+    where: {
+      receivedAt: { gte: start, lte: end },
+      status: { not: 'REVERSED' },
+      purchaseOrder: { supplierId },
+    },
+    include: {
+      purchaseOrder: { select: { id: true, sentAt: true, expectedDate: true } },
+      lines: {
+        include: { poLine: { select: { qtyOrdered: true, qtyReceived: true, expectedDate: true } } },
+      },
+    },
+  });
+  const grnCount = grnRows.length;
+
   if (poCount === 0 || grnCount === 0) {
     return {
       status: 'no_data',
-      message: 'Procurement data not yet available — auto-compute will activate once Section 4 ships POs and receipts.',
+      message: 'No procurement activity in the selected window.',
       poCount,
       grnCount,
     };
   }
-  // Section 4 will replace this branch with a real aggregation:
+
+  // On-time rate — receipt line on-time if receivedAt <= line.expectedDate (or PO.expectedDate fallback).
+  let onTimeNum = 0;
+  let onTimeDen = 0;
+  let receivedQty = 0;
+  let orderedQty = 0;
+  const leadTimes = [];
+  for (const grn of grnRows) {
+    if (grn.purchaseOrder.sentAt) {
+      leadTimes.push((grn.receivedAt - grn.purchaseOrder.sentAt) / (1000 * 60 * 60 * 24));
+    }
+    for (const line of grn.lines) {
+      const expected = line.poLine.expectedDate || grn.purchaseOrder.expectedDate;
+      if (expected) {
+        onTimeDen += 1;
+        if (grn.receivedAt <= expected) onTimeNum += 1;
+      }
+      receivedQty += line.qtyReceived;
+      orderedQty += line.poLine.qtyOrdered;
+    }
+  }
+
+  // Defect rate — proportion of received qty linked to lots later flagged REJECTED.
+  const grnLineIds = grnRows.flatMap((g) => g.lines.map((l) => l.id));
+  const rejectedLines = await prisma.goodsReceiptLine.findMany({
+    where: { id: { in: grnLineIds }, qaStatus: 'REJECTED' },
+    select: { qtyReceived: true },
+  });
+  const rejectedQty = rejectedLines.reduce((s, l) => s + l.qtyReceived, 0);
+
+  const onTimeRate = onTimeDen > 0 ? onTimeNum / onTimeDen : null;
+  const fillRate = orderedQty > 0 ? Math.min(1, receivedQty / orderedQty) : null;
+  const defectRate = receivedQty > 0 ? rejectedQty / receivedQty : 0;
+  let leadTimeMean = null;
+  let leadTimeStd = null;
+  if (leadTimes.length) {
+    leadTimeMean = leadTimes.reduce((s, v) => s + v, 0) / leadTimes.length;
+    const variance = leadTimes.reduce((s, v) => s + (v - leadTimeMean) ** 2, 0) / leadTimes.length;
+    leadTimeStd = Math.sqrt(variance);
+  }
+
+  // Persist a SupplierPerformance row tagged AUTO (upsert by supplier+periodStart).
+  const payload = {
+    periodEnd: end,
+    onTimeRate,
+    fillRate,
+    defectRate,
+    leadTimeMean,
+    leadTimeStd,
+    source: 'AUTO',
+    notes: `auto-computed from ${poCount} PO(s), ${grnCount} GRN(s)`,
+  };
+  const row = await prisma.supplierPerformance.upsert({
+    where: { supplierId_periodStart: { supplierId, periodStart: start } },
+    update: payload,
+    create: { supplierId, periodStart: start, ...payload },
+  });
+
   return {
-    status: 'pending_implementation',
-    message: 'Auto-compute pipeline scaffold in place; full aggregation lands with Section 4.',
+    status: 'ok',
     poCount,
     grnCount,
-    requestedPeriod: { periodStart, periodEnd },
+    onTimeRate,
+    fillRate,
+    defectRate,
+    leadTimeMean,
+    leadTimeStd,
+    overallScore: computeOverallScore(row),
+    period: { periodStart: start, periodEnd: end },
+    performanceId: row.id,
   };
 }
 

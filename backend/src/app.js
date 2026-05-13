@@ -9,6 +9,7 @@ const productRoutes = require('./routes/product.routes');
 const supplierRoutes = require('./routes/supplier.routes');
 const supplierCategoryRoutes = require('./routes/supplierCategory.routes');
 const purchaseOrderRoutes = require('./routes/purchaseOrder.routes');
+const goodsReceiptRoutes = require('./routes/goodsReceipt.routes');
 const shipmentRoutes = require('./routes/shipment.routes');
 const inventoryRoutes = require('./routes/inventory.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -30,6 +31,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/supplier-categories', supplierCategoryRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/goods-receipts', goodsReceiptRoutes);
 app.use('/api/shipments', shipmentRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
@@ -45,7 +47,7 @@ app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 // Global error handler
 app.use((err, _req, res, _next) => {
   console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error', code: err.code });
 });
 
 module.exports = app;

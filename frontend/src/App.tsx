@@ -9,6 +9,9 @@ import ManufacturingPage from './pages/ManufacturingPage';
 import SuppliersPage from './pages/SuppliersPage';
 import SupplierDetailPage from './pages/SupplierDetailPage';
 import OrdersPage from './pages/OrdersPage';
+import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage';
+import GoodsReceiptsPage from './pages/GoodsReceiptsPage';
+import GoodsReceiptDetailPage from './pages/GoodsReceiptDetailPage';
 import ShipmentsPage from './pages/ShipmentsPage';
 
 const queryClient = new QueryClient({
@@ -29,6 +32,9 @@ export default function App() {
               <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
               <Route path="/orders" element={<OrdersPage />} />
+              <Route path="/orders/:id" element={<PurchaseOrderDetailPage />} />
+              <Route path="/goods-receipts" element={<GoodsReceiptsPage />} />
+              <Route path="/goods-receipts/:id" element={<GoodsReceiptDetailPage />} />
               <Route path="/shipments" element={<ShipmentsPage />} />
             </Route>
           </Route>

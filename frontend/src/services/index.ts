@@ -113,11 +113,35 @@ export const supplierService = {
 
 export const purchaseOrderService = {
   list: (params?: object) => api.get('/purchase-orders', { params }).then((r) => r.data),
+  kpis: () => api.get('/purchase-orders/kpis').then((r) => r.data),
   getById: (id: string) => api.get(`/purchase-orders/${id}`).then((r) => r.data),
   create: (data: object) => api.post('/purchase-orders', data).then((r) => r.data),
   update: (id: string, data: object) => api.put(`/purchase-orders/${id}`, data).then((r) => r.data),
+  submit: (id: string) => api.post(`/purchase-orders/${id}/submit`).then((r) => r.data),
+  approve: (id: string) => api.post(`/purchase-orders/${id}/approve`).then((r) => r.data),
+  send: (id: string) => api.post(`/purchase-orders/${id}/send`).then((r) => r.data),
+  cancel: (id: string, reason?: string) =>
+    api.post(`/purchase-orders/${id}/cancel`, { reason }).then((r) => r.data),
+  close: (id: string) => api.post(`/purchase-orders/${id}/close`).then((r) => r.data),
+  activity: (id: string, params?: { limit?: number }) =>
+    api.get(`/purchase-orders/${id}/activity`, { params }).then((r) => r.data),
   receive: (id: string, data: object) =>
     api.post(`/purchase-orders/${id}/receive`, data).then((r) => r.data),
+};
+
+export const goodsReceiptService = {
+  list: (params?: object) => api.get('/goods-receipts', { params }).then((r) => r.data),
+  getById: (id: string) => api.get(`/goods-receipts/${id}`).then((r) => r.data),
+  reverse: (id: string, reason: string) =>
+    api.post(`/goods-receipts/${id}/reverse`, { reason }).then((r) => r.data),
+  qaAction: (lineId: string, action: 'RELEASE' | 'REJECT', reason?: string) =>
+    api.post(`/goods-receipts/lines/${lineId}/qa`, { action, reason }).then((r) => r.data),
+  addLandedCost: (
+    id: string,
+    data: { costType: string; amount: number; allocationMethod: string }
+  ) => api.post(`/goods-receipts/${id}/landed-costs`, data).then((r) => r.data),
+  removeLandedCost: (id: string, allocationId: string) =>
+    api.delete(`/goods-receipts/${id}/landed-costs/${allocationId}`).then((r) => r.data),
 };
 
 export const shipmentService = {
