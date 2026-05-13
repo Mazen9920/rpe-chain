@@ -120,11 +120,11 @@ export default function GoodsReceiptDetailPage() {
                 {(grn.landedCosts ?? []).map((c) => (
                   <tr key={c.id}>
                     <td className="px-4 py-2 text-slate-700">{c.costType}</td>
-                    <td className="px-4 py-2 text-slate-700">{Number(c.amount).toLocaleString()}</td>
+                    <td className="px-4 py-2 text-slate-700">{Number(c.totalAmount ?? c.amount ?? 0).toLocaleString()}</td>
                     <td className="px-4 py-2 text-slate-700">{c.allocationMethod}</td>
                     <td className="px-4 py-2 text-slate-500">{new Date(c.createdAt).toLocaleString()}</td>
                     <td className="px-4 py-2">
-                      {grn.status === 'POSTED' && (
+                      {grn.status === 'RECEIVED' && (
                         <button
                           onClick={() => goodsReceiptService.removeLandedCost(grn.id, c.id).then(invalidate)}
                           className="text-xs text-rose-600 hover:underline"

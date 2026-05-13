@@ -417,6 +417,7 @@ model Lot {
   cycleCountLines    CycleCountLine[]
   productionOutputs  ProductionOutput[]
   productionConsumptions ProductionConsumptionLot[]
+  goodsReceiptLines  GoodsReceiptLine[] @relation("GoodsReceiptLineLot")
 
   @@index([productId, expiryDate])
   @@index([currentBinId])
@@ -699,6 +700,7 @@ model GoodsReceiptLine {
 
   receipt       GoodsReceipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   poLine        PurchaseOrderLine @relation(fields: [poLineId], references: [id])
+  lot           Lot?              @relation("GoodsReceiptLineLot", fields: [lotId], references: [id])
   qaActionedBy  User?             @relation("GoodsReceiptLineQaBy", fields: [qaActionedById], references: [id])
 
   @@index([receiptId])

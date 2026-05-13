@@ -39,7 +39,7 @@ export default function GoodsReceiptsPage() {
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded-md text-sm">
           <option value="">All statuses</option>
-          <option value="POSTED">POSTED</option>
+          <option value="RECEIVED">RECEIVED</option>
           <option value="REVERSED">REVERSED</option>
         </select>
       </div>

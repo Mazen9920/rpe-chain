@@ -39,7 +39,12 @@ const getById = wrap(async (req, res) => {
   const grn = await prisma.goodsReceipt.findUnique({
     where: { id: req.params.id },
     include: {
-      purchaseOrder: { include: { supplier: { select: { id: true, name: true, code: true } } } },
+      purchaseOrder: {
+        include: {
+          supplier: { select: { id: true, name: true, code: true } },
+          landedCostAllocations: { orderBy: { createdAt: 'asc' } },
+        },
+      },
       warehouse: { select: { id: true, name: true, code: true } },
       receivedBy: { select: { id: true, name: true } },
       reversedBy: { select: { id: true, name: true } },
@@ -50,10 +55,11 @@ const getById = wrap(async (req, res) => {
           qaActionedBy: { select: { id: true, name: true } },
         },
       },
-      landedCosts: true,
     },
   });
   if (!grn) return res.status(404).json({ error: 'Goods receipt not found' });
+  // Expose PO-scoped landed cost allocations as `landedCosts` on the GRN for convenience.
+  grn.landedCosts = grn.purchaseOrder?.landedCostAllocations ?? [];
   res.json(grn);
 });
 
