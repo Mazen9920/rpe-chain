@@ -1107,6 +1107,20 @@ async function cancelCycleCount(req, res) {
   res.json(updated);
 }
 
+async function recallLot(req, res) {
+  try {
+    const compliance = require('../services/compliance.service');
+    const result = await compliance.recallLot(req.params.id, {
+      reason: req.body?.reason,
+      actorId: req.user?.id,
+    });
+    res.json(result);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
+}
+
 module.exports = {
   listWarehouses,
   getWarehouse,
@@ -1124,6 +1138,7 @@ module.exports = {
   listBinStock,
   listLots,
   updateLotQaStatus,
+  recallLot,
   getValuation,
   listMovements,
   adjustStock,

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Edit2, PackagePlus, Search, Trash2 } from 'lucide-react';
+import { Edit2, PackagePlus, Search, Trash2, ShieldCheck } from 'lucide-react';
 import { categoryService, productService } from '../../services';
 import type { Category, Product } from '../../types/inventory';
 import ProductFormSlideOver from './ProductFormSlideOver';
+import CertificationsModal from './CertificationsModal';
 
 function getErrorMessage(error: unknown) {
   if (typeof error === 'object' && error && 'response' in error) {
@@ -17,6 +18,7 @@ export default function ProductsTab() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [certsProduct, setCertsProduct] = useState<Product | null>(null);
   const [isFormOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -120,6 +122,9 @@ export default function ProductsTab() {
                         <button onClick={() => openEdit(product)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
                           <Edit2 size={13} /> Edit
                         </button>
+                        <button onClick={() => setCertsProduct(product)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                          <ShieldCheck size={13} /> Certs
+                        </button>
                         <button onClick={() => deactivateProduct(product)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
                           <Trash2 size={13} /> Deactivate
                         </button>
@@ -142,6 +147,9 @@ export default function ProductsTab() {
         onClose={() => setFormOpen(false)}
         onSubmit={(data) => saveMutation.mutate(data)}
       />
+      {certsProduct ? (
+        <CertificationsModal productId={certsProduct.id} productName={certsProduct.name} onClose={() => setCertsProduct(null)} />
+      ) : null}
     </>
   );
 }

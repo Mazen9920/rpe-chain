@@ -14,6 +14,7 @@ const AUDIENCE = {
   SUPPLIER_PERF: ['PROCUREMENT', 'ADMIN'],
   SHIPMENT_DELAY: ['WAREHOUSE', 'SALES', 'ADMIN'],
   CREDIT_LIMIT: ['SALES', 'FINANCE', 'ADMIN'],
+  CERTIFICATION_EXPIRY: ['PROCUREMENT', 'WAREHOUSE', 'ADMIN'],
 };
 
 // Carrier SLA (days from dispatch to expected delivery) — used when estimatedArrival missing.
@@ -401,12 +402,14 @@ async function scanCreditLimitAlerts() {
 
 // ─── Master scan ─────────────────────────────────────────────────────────────
 async function runAllScans({ actorId = null, sourceIp = null } = {}) {
+  const compliance = require('./compliance.service');
   const summary = {
     inventory: await scanInventoryAlerts(),
     ap: await scanApAlerts(),
     supplierPerf: await scanSupplierPerfAlerts(),
     shipmentDelay: await scanShipmentDelayAlerts(),
     creditLimit: await scanCreditLimitAlerts(),
+    certificationExpiry: await compliance.scanCertificationExpiryAlerts(),
   };
   await logEvent({ eventType: 'ALERTS_SCANNED', entityType: 'Alert', entityId: 'all', actorId, payload: summary, sourceIp });
   return summary;
@@ -496,6 +499,9 @@ async function resolveAlert(id, actorId) {
 module.exports = {
   AUDIENCE,
   CARRIER_SLA_DAYS,
+  loadOpenAlertsForTypes,
+  upsertAlert,
+  autoResolveStale,
   scanInventoryAlerts,
   scanApAlerts,
   scanSupplierPerfAlerts,

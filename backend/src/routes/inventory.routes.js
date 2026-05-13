@@ -35,6 +35,7 @@ router.get('/bin-stock-levels', ctrl.listBinStock);
 
 router.get('/lots', ctrl.listLots);
 router.put('/lots/:id/qa-status', requireRole('ADMIN', 'WAREHOUSE'), ctrl.updateLotQaStatus);
+router.post('/lots/:id/recall', requireRole('ADMIN', 'WAREHOUSE'), ctrl.recallLot);
 
 router.get('/valuation', ctrl.getValuation);
 

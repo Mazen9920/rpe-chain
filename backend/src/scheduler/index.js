@@ -46,6 +46,8 @@ async function runDailyPass() {
     summary.supplierPerfAlerts = await alerts.scanSupplierPerfAlerts();
     summary.shipmentDelayAlerts = await alerts.scanShipmentDelayAlerts();
     summary.creditLimitAlerts = await alerts.scanCreditLimitAlerts();
+    const compliance = require('../services/compliance.service');
+    summary.certificationExpiryAlerts = await compliance.scanCertificationExpiryAlerts();
 
     summary.supplierScorecards = await supplierSvc.recomputeAllSupplierPerformance().catch((e) => ({ error: e.message }));
     summary.forecasts = await forecast.generateForecasts().catch((e) => ({ error: e.message }));
