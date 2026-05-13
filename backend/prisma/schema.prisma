@@ -21,10 +21,17 @@ model User {
   name      String
   role      Role      @default(READ_ONLY)
   isActive  Boolean   @default(true)
+  // --- Auth hardening (Section 8) ---
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  totpSecret       String?
+  totpEnabled      Boolean   @default(false)
+  lastLoginAt      DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  refreshTokens      RefreshToken[]
   purchaseOrders     PurchaseOrder[] @relation("CreatedBy")
   approvedPOs        PurchaseOrder[] @relation("ApprovedBy")
   requestedPOs       PurchaseOrder[] @relation("RequestedBy")
@@ -56,6 +63,22 @@ enum Role {
   SALES
   PRODUCTION
   READ_ONLY
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String?
+  userAgent  String?
+  ipAddress  String?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 enum ProductType {
