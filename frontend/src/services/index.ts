@@ -71,8 +71,8 @@ export const inventoryService = {
   moveBetweenBins: (data: object) => api.post('/inventory/bin-moves', data).then((r) => r.data),
   transfers: () => api.get('/inventory/transfers').then((r) => r.data),
   createTransfer: (data: object) => api.post('/inventory/transfers', data).then((r) => r.data),
-  shipTransfer: (id: string) => api.post(`/inventory/transfers/${id}/ship`).then((r) => r.data),
-  receiveTransfer: (id: string) => api.post(`/inventory/transfers/${id}/receive`).then((r) => r.data),
+  shipTransfer: (id: string, data?: object) => api.post(`/inventory/transfers/${id}/ship`, data ?? {}).then((r) => r.data),
+  receiveTransfer: (id: string, data?: object) => api.post(`/inventory/transfers/${id}/receive`, data ?? {}).then((r) => r.data),
   cycleCounts: (params?: { warehouseId?: string; status?: string }) =>
     api.get('/inventory/cycle-counts', { params }).then((r) => r.data),
   createCycleCount: (data: object) => api.post('/inventory/cycle-counts', data).then((r) => r.data),

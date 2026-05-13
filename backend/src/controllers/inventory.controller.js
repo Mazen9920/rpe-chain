@@ -523,75 +523,118 @@ async function shipTransfer(req, res) {
   if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
   if (transfer.status !== 'DRAFT') return res.status(409).json({ error: 'Only draft transfers can be shipped' });
 
-  const result = await prisma.$transaction(async (tx) => {
-    for (const line of transfer.lines) {
-      await recordMovement({
-        productId: line.productId,
-        warehouseId: transfer.sourceWarehouseId,
-        binId: line.sourceBinId,
-        lotId: line.lotId,
-        qty: -line.qtyRequested,
-        reasonCode: 'TRANSFER',
-        sourceDocType: 'TRANSFER',
-        sourceDocId: transfer.transferNumber,
-        operatorId: req.user?.id,
-        notes: `Transfer shipped to ${transfer.destinationWarehouseId}`,
-      }, tx);
-      await tx.stockTransferLine.update({ where: { id: line.id }, data: { qtyShipped: line.qtyRequested } });
-    }
-    return tx.stockTransfer.update({
-      where: { id: transfer.id },
-      data: { status: 'IN_TRANSIT', shippedAt: new Date() },
-      include: { lines: true },
+  // Optional per-line overrides: { lines: [{ lineId, qtyShipped }] }. Defaults to qtyRequested.
+  const lineOverrides = Array.isArray(req.body && req.body.lines)
+    ? new Map(req.body.lines.map((l) => [l.lineId, Number(l.qtyShipped)]))
+    : new Map();
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      for (const line of transfer.lines) {
+        const qtyShipped = lineOverrides.has(line.id)
+          ? lineOverrides.get(line.id)
+          : line.qtyRequested;
+        if (!Number.isFinite(qtyShipped) || qtyShipped <= 0) continue;
+        await recordMovement({
+          productId: line.productId,
+          warehouseId: transfer.sourceWarehouseId,
+          binId: line.sourceBinId,
+          lotId: line.lotId,
+          qty: -qtyShipped,
+          reasonCode: 'TRANSFER',
+          sourceDocType: 'TRANSFER',
+          sourceDocId: transfer.transferNumber,
+          operatorId: req.user?.id,
+          notes: `Transfer shipped to warehouse ${transfer.destinationWarehouseId}`,
+        }, tx);
+        await tx.stockTransferLine.update({ where: { id: line.id }, data: { qtyShipped } });
+      }
+      return tx.stockTransfer.update({
+        where: { id: transfer.id },
+        data: { status: 'IN_TRANSIT', shippedAt: new Date() },
+        include: { lines: { include: { product: { select: { id: true, sku: true, name: true, uom: true } } } } },
+      });
     });
-  });
-  await logEvent({
-    eventType: 'STOCK_TRANSFER_SHIPPED',
-    entityType: 'StockTransfer',
-    entityId: result.id,
-    actorId: req.user?.id,
-    payload: { after: result },
-    sourceIp: req.ip,
-  });
-  res.json(result);
+    await logEvent({
+      eventType: 'STOCK_TRANSFER_SHIPPED',
+      entityType: 'StockTransfer',
+      entityId: result.id,
+      actorId: req.user?.id,
+      payload: { after: result },
+      sourceIp: req.ip,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to ship transfer' });
+  }
 }
 
 async function receiveTransfer(req, res) {
   const transfer = await prisma.stockTransfer.findUnique({ where: { id: req.params.id }, include: { lines: true } });
   if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
-  if (transfer.status !== 'IN_TRANSIT') return res.status(409).json({ error: 'Only in-transit transfers can be received' });
+  if (!['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(transfer.status)) {
+    return res.status(409).json({ error: 'Only in-transit or partially-received transfers can be received' });
+  }
 
-  const result = await prisma.$transaction(async (tx) => {
-    for (const line of transfer.lines) {
-      await recordMovement({
-        productId: line.productId,
-        warehouseId: transfer.destinationWarehouseId,
-        binId: line.destinationBinId,
-        lotId: line.lotId,
-        qty: line.qtyShipped,
-        reasonCode: 'TRANSFER',
-        sourceDocType: 'TRANSFER',
-        sourceDocId: transfer.transferNumber,
-        operatorId: req.user?.id,
-        notes: `Transfer received from ${transfer.sourceWarehouseId}`,
-      }, tx);
-      await tx.stockTransferLine.update({ where: { id: line.id }, data: { qtyReceived: line.qtyShipped } });
-    }
-    return tx.stockTransfer.update({
-      where: { id: transfer.id },
-      data: { status: 'RECEIVED', receivedAt: new Date() },
-      include: { lines: true },
+  // Optional per-line overrides: { lines: [{ lineId, qtyReceived }] }. Defaults to full remaining qty.
+  const lineOverrides = Array.isArray(req.body && req.body.lines)
+    ? new Map(req.body.lines.map((l) => [l.lineId, Number(l.qtyReceived)]))
+    : new Map();
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const finalLines = [];
+      for (const line of transfer.lines) {
+        const remaining = line.qtyShipped - line.qtyReceived;
+        if (remaining <= 0) {
+          finalLines.push(line);
+          continue;
+        }
+        const toReceive = lineOverrides.has(line.id)
+          ? Math.min(Math.max(0, lineOverrides.get(line.id)), remaining)
+          : remaining;
+        if (toReceive <= 0) {
+          finalLines.push(line);
+          continue;
+        }
+        await recordMovement({
+          productId: line.productId,
+          warehouseId: transfer.destinationWarehouseId,
+          binId: line.destinationBinId,
+          lotId: line.lotId,
+          qty: toReceive,
+          reasonCode: 'TRANSFER',
+          sourceDocType: 'TRANSFER',
+          sourceDocId: transfer.transferNumber,
+          operatorId: req.user?.id,
+          notes: `Transfer received from warehouse ${transfer.sourceWarehouseId}`,
+        }, tx);
+        const updated = await tx.stockTransferLine.update({
+          where: { id: line.id },
+          data: { qtyReceived: line.qtyReceived + toReceive },
+        });
+        finalLines.push(updated);
+      }
+      const allReceived = finalLines.every((l) => l.qtyReceived >= l.qtyShipped);
+      const newStatus = allReceived ? 'RECEIVED' : 'PARTIALLY_RECEIVED';
+      return tx.stockTransfer.update({
+        where: { id: transfer.id },
+        data: { status: newStatus, receivedAt: allReceived ? new Date() : null },
+        include: { lines: { include: { product: { select: { id: true, sku: true, name: true, uom: true } } } } },
+      });
     });
-  });
-  await logEvent({
-    eventType: 'STOCK_TRANSFER_RECEIVED',
-    entityType: 'StockTransfer',
-    entityId: result.id,
-    actorId: req.user?.id,
-    payload: { after: result },
-    sourceIp: req.ip,
-  });
-  res.json(result);
+    await logEvent({
+      eventType: 'STOCK_TRANSFER_RECEIVED',
+      entityType: 'StockTransfer',
+      entityId: result.id,
+      actorId: req.user?.id,
+      payload: { status: result.status, after: result },
+      sourceIp: req.ip,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to receive transfer' });
+  }
 }
 
 async function listCycleCounts(req, res) {
