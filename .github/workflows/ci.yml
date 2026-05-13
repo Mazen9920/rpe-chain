@@ -13,6 +13,10 @@ jobs:
   validate:
     name: Validate (prisma + tsc + build)
     runs-on: ubuntu-latest
+    env:
+      # Prisma reads env("DATABASE_URL") from schema during `validate`.
+      # A placeholder is sufficient — no DB connection is opened.
+      DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
     steps:
       - uses: actions/checkout@v4
 
@@ -111,11 +115,26 @@ jobs:
 
       - name: Run all smoke tests
         working-directory: backend
-        run: bash scripts/run-all-tests.sh
+        run: bash scripts/run-all-tests.sh 2>&1 | tee /tmp/smoke.log
 
       - name: Backend log on failure
         if: failure()
-        run: tail -200 /tmp/backend.log
+        run: |
+          echo "=========== /tmp/backend.log (tail 300) ==========="
+          tail -300 /tmp/backend.log || true
+          echo "=========== /tmp/smoke.log (tail 300) ==========="
+          tail -300 /tmp/smoke.log || true
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: |
+            /tmp/backend.log
+            /tmp/smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   docker:
     name: Build docker images
