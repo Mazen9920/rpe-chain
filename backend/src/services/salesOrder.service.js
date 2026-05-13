@@ -88,11 +88,12 @@ async function generateOrderNumber(tx) {
 // ─── Reads ──────────────────────────────────────────────────────────────────
 
 async function listSalesOrders(params = {}) {
-  const { search, status, customerId, warehouseId, limit = 100, offset = 0 } = params;
+  const { search, status, customerId, warehouseId, source, limit = 100, offset = 0 } = params;
   const where = {};
   if (status) where.status = status;
   if (customerId) where.customerId = customerId;
   if (warehouseId) where.warehouseId = warehouseId;
+  if (source) where.source = source;
   if (search) {
     where.OR = [
       { orderNumber: { contains: search, mode: 'insensitive' } },
@@ -561,6 +562,35 @@ async function shipOrder(id, data, actor, sourceIp) {
     payload: { shipmentNumber: result.shipment.shipmentNumber, salesOrderId: so.id },
     sourceIp,
   });
+
+  // If this SO came from Shopify, enqueue fulfillment + inventory push (best-effort, non-blocking).
+  try {
+    if (so.source === 'SHOPIFY' && so.externalId) {
+      const outbox = require('./outbox.service');
+      await outbox.enqueue({
+        target: 'shopify',
+        action: 'fulfillment.create',
+        payload: { shipmentId: result.shipment.id },
+        idempotencyKey: `shopify:fulfillment:${result.shipment.id}`,
+      });
+      // Inventory push for all shipped products
+      const productIds = [...new Set(toShip.map((s) => s.line.productId))];
+      const stocks = await prisma.stockLevel.findMany({
+        where: { productId: { in: productIds }, warehouseId: so.warehouseId },
+      });
+      const byProduct = new Map(stocks.map((s) => [s.productId, s.onHand]));
+      for (const pid of productIds) {
+        await outbox.enqueue({
+          target: 'shopify',
+          action: 'inventory.set',
+          payload: { productId: pid, onHand: byProduct.get(pid) || 0 },
+          idempotencyKey: `shopify:inv:${pid}:${result.shipment.id}`,
+        });
+      }
+    }
+  } catch (e) {
+    require('../lib/logger').warn({ err: e.message }, 'shopify enqueue from SO ship failed');
+  }
 
   return getSalesOrderById(so.id);
 }

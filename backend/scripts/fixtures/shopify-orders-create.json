@@ -1,0 +1,33 @@
+{
+  "id": 9001001001,
+  "name": "#SHOP-1001",
+  "email": "alice@example.com",
+  "currency": "USD",
+  "note": "Smoke test order — Shopify Phase D",
+  "customer": {
+    "id": 7700001,
+    "first_name": "Alice",
+    "last_name": "Shopper",
+    "email": "alice@example.com",
+    "phone": "+15555550111"
+  },
+  "shipping_address": {
+    "address1": "123 Main St",
+    "city": "Cairo",
+    "province": "Cairo",
+    "zip": "11511",
+    "country": "Egypt"
+  },
+  "billing_address": {
+    "address1": "123 Main St",
+    "city": "Cairo",
+    "province": "Cairo",
+    "zip": "11511",
+    "country": "Egypt"
+  },
+  "line_items": [
+    { "id": 1, "sku": "RPE-DSP-N95",  "title": "N95 Disposable Respirator", "quantity": 2, "price": "45.00" },
+    { "id": 2, "sku": "RPE-FFR-6800", "title": "Full-Face Respirator",      "quantity": 1, "price": "245.00" },
+    { "id": 3, "sku": "UNKNOWN-SKU",  "title": "Unmapped item",             "quantity": 1, "price": "10.00" }
+  ]
+}

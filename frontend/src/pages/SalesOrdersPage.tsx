@@ -30,14 +30,15 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function SalesOrdersPage() {
   const [tab, setTab] = useState<'all' | SOStatus>('all');
+  const [source, setSource] = useState<'all' | 'MANUAL' | 'SHOPIFY' | 'B2B'>('all');
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const qc = useQueryClient();
 
   const { data: kpis } = useQuery({ queryKey: ['so-kpis'], queryFn: () => salesOrderService.kpis() });
   const { data, isLoading } = useQuery({
-    queryKey: ['sales-orders', { tab, search }],
-    queryFn: () => salesOrderService.list({ status: tab === 'all' ? undefined : tab, search: search || undefined, limit: 100 }),
+    queryKey: ['sales-orders', { tab, source, search }],
+    queryFn: () => salesOrderService.list({ status: tab === 'all' ? undefined : tab, source: source === 'all' ? undefined : source, search: search || undefined, limit: 100 }),
   });
 
   const items: SalesOrder[] = data?.items ?? [];
@@ -72,6 +73,15 @@ export default function SalesOrdersPage() {
             className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${tab === t.key ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
           >
             {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-2 mb-3 text-xs">
+        <span className="text-slate-500 self-center mr-1">Source:</span>
+        {(['all','MANUAL','SHOPIFY','B2B'] as const).map((s) => (
+          <button key={s} onClick={() => setSource(s)} className={`px-2.5 py-1 rounded-md font-medium ${source === s ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+            {s === 'all' ? 'All' : s}
           </button>
         ))}
       </div>

@@ -188,7 +188,7 @@ export const customerService = {
 };
 
 export const salesOrderService = {
-  list: (params?: { search?: string; status?: string; customerId?: string; warehouseId?: string; limit?: number; offset?: number }) =>
+  list: (params?: { search?: string; status?: string; customerId?: string; warehouseId?: string; source?: string; limit?: number; offset?: number }) =>
     api.get<SOListResponse>('/sales-orders', { params }).then((r) => r.data),
   kpis: () => api.get<SOKpis>('/sales-orders/kpis').then((r) => r.data),
   getById: (id: string) => api.get<SalesOrder>(`/sales-orders/${id}`).then((r) => r.data),
