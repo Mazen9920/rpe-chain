@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  validate:
+    name: Validate (prisma + tsc + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Prisma validate
+        working-directory: backend
+        run: npx prisma validate
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend type-check
+        working-directory: frontend
+        run: npm run type-check
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+  test:
+    name: Smoke tests (postgres service + all suites)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rpe_user
+          POSTGRES_PASSWORD: rpe_pass
+          POSTGRES_DB: rpe_supply
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rpe_user -d rpe_supply"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://rpe_user:rpe_pass@localhost:5432/rpe_supply
+      JWT_SECRET: ci-test-secret-do-not-use-in-prod
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30d
+      NODE_ENV: test
+      PORT: 3000
+      LOG_LEVEL: warn
+      DISABLE_SCHEDULER: 'true'
+      RATE_LIMIT_DISABLED: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Prisma generate + migrate
+        working-directory: backend
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+
+      - name: Seed database
+        working-directory: backend
+        run: node prisma/seed.js
+
+      - name: Start backend
+        working-directory: backend
+        run: |
+          nohup node src/index.js > /tmp/backend.log 2>&1 &
+          echo "Waiting for backend to come up..."
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:3000/health > /dev/null; then
+              echo "Backend up after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -fs http://localhost:3000/health || (echo "Backend never came up"; tail -50 /tmp/backend.log; exit 1)
+
+      - name: Run all smoke tests
+        working-directory: backend
+        run: bash scripts/run-all-tests.sh
+
+      - name: Backend log on failure
+        if: failure()
+        run: tail -200 /tmp/backend.log
+
+  docker:
+    name: Build docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: false
+          tags: rpe-supply-backend:ci
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: false
+          tags: rpe-supply-frontend:ci

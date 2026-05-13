@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { LayoutDashboard, Package, Users, ShoppingCart, Truck, Factory, LogOut, PackageCheck, Receipt, UserCheck, ClipboardList, Bell, BarChart3 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import AlertsBell from './AlertsBell';
+import api from '../lib/api';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -19,7 +20,17 @@ const navItems = [
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuthStore();
+  const { user, logout, refreshToken } = useAuthStore();
+
+  async function handleSignOut() {
+    try {
+      if (refreshToken) await api.post('/auth/logout', { refreshToken });
+    } catch {
+      // best-effort; clear local state regardless
+    } finally {
+      logout();
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -53,7 +64,7 @@ export default function Layout() {
           <p className="text-xs font-medium text-slate-300">{user?.name}</p>
           <p className="text-xs text-slate-500 mb-3">{user?.role}</p>
           <button
-            onClick={logout}
+            onClick={handleSignOut}
             className="flex items-center gap-2 text-slate-400 hover:text-white text-xs transition-colors"
           >
             <LogOut size={14} />

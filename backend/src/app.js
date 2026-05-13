@@ -1,8 +1,13 @@
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
-const morgan = require('morgan');
 
+const requestId = require('./middleware/requestId');
+const requestLogger = require('./middleware/requestLogger');
+const sentry = require('./lib/sentry');
+const logger = require('./lib/logger');
+
+const healthRoutes = require('./routes/health.routes');
 const authRoutes = require('./routes/auth.routes');
 const categoryRoutes = require('./routes/category.routes');
 const productRoutes = require('./routes/product.routes');
@@ -27,11 +32,19 @@ const eventsRoutes = require('./routes/events.routes');
 
 const app = express();
 
+// Behind nginx/load-balancer — trust X-Forwarded-* so req.ip is correct
+// and express-rate-limit doesn't refuse to start.
+app.set('trust proxy', 1);
+
 // Security & middleware
+app.use(requestId);
+app.use(requestLogger);
 app.use(helmet());
 app.use(cors({ origin: '*' }));
-app.use(morgan('dev'));
 app.use(express.json());
+
+// Health endpoints (mounted before auth so probes are always reachable)
+app.use('/api', healthRoutes);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -56,15 +69,18 @@ app.use('/api/alerts', alertsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/events', eventsRoutes);
 
-// Health check
+// Health check (legacy root path kept for backward compat — prefer /api/health)
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'rpe-supply-api' }));
+
+// Sentry error handler must come BEFORE our handlers but AFTER routes.
+sentry.attach(app);
 
 // 404 handler
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 
 // Global error handler
-app.use((err, _req, res, _next) => {
-  console.error(err);
+app.use((err, req, res, _next) => {
+  (req.log || logger).error({ err, reqId: req.id }, 'unhandled error');
   res.status(err.status || 500).json({ error: err.message || 'Internal server error', code: err.code });
 });
 

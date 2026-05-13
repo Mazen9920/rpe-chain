@@ -1,26 +1,88 @@
-# NOTE: PostgreSQL is installed via Homebrew on this machine (brew services start postgresql@16)
-# This docker-compose is provided for teams using Docker. Use whichever suits your setup.
+# RPE Chain Supply OS — full-stack docker-compose
+#
+# Boot the entire stack:
+#     docker compose up --build
+# Then:
+#     frontend  http://localhost:8080
+#     backend   http://localhost:3000/api/health
+#     postgres  localhost:5432
+#
+# Override defaults via a local `.env` file at the repo root.
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: rpe_supply_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: rpe_user
-      POSTGRES_PASSWORD: rpe_pass
-      POSTGRES_DB: rpe_supply
+      POSTGRES_USER: ${POSTGRES_USER:-rpe_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rpe_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-rpe_supply}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rpe_user} -d ${POSTGRES_DB:-rpe_supply}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+    container_name: rpe_supply_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://rpe_user:rpe_pass@postgres:5432/rpe_supply}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-please}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RUN_DAILY_ON_BOOT: ${RUN_DAILY_ON_BOOT:-false}
+      DISABLE_SCHEDULER: ${DISABLE_SCHEDULER:-false}
+      RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-false}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SEED_ON_BOOT: ${SEED_ON_BOOT:-false}
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: rpe_supply_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: rpe_supply_pgadmin
+    profiles: ["tools"]
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@rpegear.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@rpegear.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
       - "5050:80"
     depends_on:
@@ -28,3 +90,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:
