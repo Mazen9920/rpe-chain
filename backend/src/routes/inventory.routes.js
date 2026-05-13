@@ -21,8 +21,15 @@ router.put('/bins/:id', requireRole('ADMIN', 'WAREHOUSE'), ctrl.updateBin);
 router.delete('/bins/:id', requireRole('ADMIN', 'WAREHOUSE'), ctrl.deactivateBin);
 
 router.get('/lookup', ctrl.lookupBarcode);
+router.get('/summary', ctrl.getSummary);
 router.get('/reorder-recommendations', ctrl.getReorderRecommendations);
+router.post('/reorder-recommendations/generate', requireRole('ADMIN', 'WAREHOUSE', 'PROCUREMENT'), ctrl.generateReorderRecommendations);
+router.get('/reorder-recommendations/saved', ctrl.listSavedReorderRecommendations);
+router.post('/reorder-recommendations/:id/dismiss', requireRole('ADMIN', 'WAREHOUSE', 'PROCUREMENT'), ctrl.dismissReorderRecommendation);
 router.get('/alerts', ctrl.getAlerts);
+router.post('/alerts/scan', requireRole('ADMIN', 'WAREHOUSE'), ctrl.scanAlerts);
+router.get('/alerts/open', ctrl.listOpenAlerts);
+router.post('/alerts/:id/acknowledge', ctrl.acknowledgeAlert);
 router.get('/stock-levels', ctrl.listStockLevels);
 router.get('/bin-stock-levels', ctrl.listBinStock);
 

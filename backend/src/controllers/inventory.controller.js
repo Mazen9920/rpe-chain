@@ -837,6 +837,125 @@ async function getAlerts(req, res) {
   res.json({ expiryAlerts, zeroStockAlerts, summary: { expiry: expiryAlerts.length, zeroStock: zeroStockAlerts.length } });
 }
 
+/**
+ * Persist alerts to the Alert model idempotently.
+ * Strategy: for each detected condition, upsert by (type, productId, [supplierId], status=OPEN).
+ * Closes (RESOLVED) alerts whose underlying condition no longer holds.
+ */
+async function scanAlerts(req, res) {
+  const now = new Date();
+  const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const in60 = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+  const in90 = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  const openAlerts = await prisma.alert.findMany({ where: { status: 'OPEN' } });
+  const openByKey = new Map(openAlerts.map((a) => [`${a.type}:${a.productId ?? ''}:${(a.payload && a.payload.lotId) || ''}`, a]));
+  const stillActive = new Set();
+
+  async function upsertAlert({ type, severity, productId, payload, reasoning }) {
+    const key = `${type}:${productId ?? ''}:${payload.lotId || ''}`;
+    stillActive.add(key);
+    if (openByKey.has(key)) {
+      // Update severity / payload / reasoning if changed
+      const existing = openByKey.get(key);
+      if (existing.severity !== severity || JSON.stringify(existing.payload) !== JSON.stringify(payload)) {
+        await prisma.alert.update({ where: { id: existing.id }, data: { severity, payload, reasoning } });
+      }
+      return;
+    }
+    await prisma.alert.create({ data: { type, severity, productId: productId ?? null, payload, reasoning, status: 'OPEN' } });
+  }
+
+  // 1. Expiry alerts
+  const lots = await prisma.lot.findMany({
+    where: { expiryDate: { lte: in90 }, qtyRemaining: { gt: 0 } },
+    include: { product: { select: { id: true, sku: true, name: true } } },
+  });
+  for (const lot of lots) {
+    const daysLeft = Math.ceil((new Date(lot.expiryDate).getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    let severity, type;
+    if (daysLeft < 0) { severity = 'CRITICAL'; type = 'EXPIRY'; }
+    else if (daysLeft < 30) { severity = 'HIGH'; type = 'EXPIRY'; }
+    else if (daysLeft < 60) { severity = 'MEDIUM'; type = 'EXPIRY'; }
+    else { severity = 'LOW'; type = 'EXPIRY'; }
+    await upsertAlert({
+      type,
+      severity,
+      productId: lot.productId,
+      payload: { lotId: lot.id, lotNumber: lot.lotNumber, qtyRemaining: lot.qtyRemaining, expiryDate: lot.expiryDate, daysLeft },
+      reasoning: daysLeft < 0
+        ? `Lot ${lot.lotNumber} expired ${Math.abs(daysLeft)} days ago (${lot.qtyRemaining} units remain).`
+        : `Lot ${lot.lotNumber} expires in ${daysLeft} days (${lot.qtyRemaining} units).`,
+    });
+  }
+
+  // 2. Low stock — onHand <= reorderPoint
+  const stockLevels = await prisma.stockLevel.findMany({
+    include: { product: { select: { id: true, sku: true, name: true, reorderPoint: true, isActive: true } }, warehouse: { select: { code: true } } },
+  });
+  for (const sl of stockLevels) {
+    if (!sl.product?.isActive || sl.product.reorderPoint == null) continue;
+    if (sl.onHand > sl.product.reorderPoint) continue;
+    const severity = sl.onHand <= 0 ? 'CRITICAL' : sl.onHand < sl.product.reorderPoint / 2 ? 'HIGH' : 'MEDIUM';
+    await upsertAlert({
+      type: 'STOCKOUT_RISK',
+      severity,
+      productId: sl.productId,
+      payload: { warehouseCode: sl.warehouse.code, onHand: sl.onHand, reorderPoint: sl.product.reorderPoint, lotId: `wh-${sl.warehouseId}` },
+      reasoning: `${sl.product.sku} at ${sl.warehouse.code}: ${sl.onHand} on hand vs reorder point ${sl.product.reorderPoint}.`,
+    });
+  }
+
+  // 3. QA quarantine
+  const quarantined = await prisma.lot.findMany({
+    where: { qaStatus: 'QUARANTINED', qtyRemaining: { gt: 0 } },
+    include: { product: { select: { id: true, sku: true, name: true } } },
+  });
+  for (const lot of quarantined) {
+    await upsertAlert({
+      type: 'DEAD_STOCK',
+      severity: 'MEDIUM',
+      productId: lot.productId,
+      payload: { lotId: lot.id, lotNumber: lot.lotNumber, qtyRemaining: lot.qtyRemaining, reason: 'QA_QUARANTINE' },
+      reasoning: `Lot ${lot.lotNumber} (${lot.qtyRemaining} units of ${lot.product.sku}) is on QA quarantine.`,
+    });
+  }
+
+  // 4. Auto-resolve alerts whose condition no longer holds
+  for (const [key, alert] of openByKey.entries()) {
+    if (!stillActive.has(key) && ['EXPIRY', 'STOCKOUT_RISK', 'DEAD_STOCK'].includes(alert.type)) {
+      await prisma.alert.update({ where: { id: alert.id }, data: { status: 'RESOLVED' } });
+    }
+  }
+
+  const total = await prisma.alert.count({ where: { status: 'OPEN' } });
+  await logEvent({ eventType: 'ALERTS_SCANNED', entityType: 'Alert', actorId: req?.user?.id, payload: { openCount: total }, sourceIp: req?.ip });
+  if (res) res.json({ ok: true, openCount: total });
+  return total;
+}
+
+async function listOpenAlerts(req, res) {
+  const limit = Math.min(Number(req.query.limit) || 20, 100);
+  const alerts = await prisma.alert.findMany({
+    where: { status: 'OPEN' },
+    take: limit,
+    orderBy: [{ severity: 'desc' }, { createdAt: 'desc' }],
+    include: { product: { select: { id: true, sku: true, name: true } } },
+  });
+  const counts = await prisma.alert.groupBy({ by: ['severity'], where: { status: 'OPEN' }, _count: { _all: true } });
+  res.json({ alerts, counts: Object.fromEntries(counts.map((c) => [c.severity, c._count._all])), total: alerts.length });
+}
+
+async function acknowledgeAlert(req, res) {
+  const alert = await prisma.alert.findUnique({ where: { id: req.params.id } });
+  if (!alert) return res.status(404).json({ error: 'Alert not found' });
+  const updated = await prisma.alert.update({
+    where: { id: alert.id },
+    data: { status: 'ACKNOWLEDGED', acknowledgedById: req.user?.id, acknowledgedAt: new Date() },
+  });
+  res.json(updated);
+}
+
 async function getReorderRecommendations(req, res) {
   // Find all StockLevel rows where onHand <= product.reorderPoint
   // Join to product to get reorderPoint, reorderQty, sku, name, and preferred supplier
@@ -845,7 +964,7 @@ async function getReorderRecommendations(req, res) {
       product: {
         include: {
           supplierProducts: {
-            where: { isPreferred: true },
+            orderBy: { priority: 'asc' },
             take: 1,
             include: { supplier: { select: { id: true, code: true, name: true } } },
           },
@@ -875,6 +994,86 @@ async function getReorderRecommendations(req, res) {
   }));
 
   res.json(recommendations);
+}
+
+/**
+ * Persist reorder recommendations to the ReorderRecommendation model.
+ * Idempotent: avoids duplicating PENDING rows for same productId.
+ */
+async function generateReorderRecommendations(req, res) {
+  const stockLevels = await prisma.stockLevel.findMany({
+    include: {
+      product: {
+        include: {
+          supplierProducts: { orderBy: { priority: 'asc' }, take: 1, include: { supplier: true } },
+        },
+      },
+    },
+  });
+
+  // Aggregate per product (sum on-hand across warehouses)
+  const byProduct = new Map();
+  for (const sl of stockLevels) {
+    if (!sl.product?.isActive || sl.product.reorderPoint == null) continue;
+    const cur = byProduct.get(sl.productId) || { product: sl.product, totalOnHand: 0 };
+    cur.totalOnHand += sl.onHand;
+    byProduct.set(sl.productId, cur);
+  }
+
+  const existingPending = await prisma.reorderRecommendation.findMany({ where: { status: 'PENDING' } });
+  const pendingByProduct = new Set(existingPending.map((r) => r.productId));
+
+  let created = 0;
+  for (const [productId, { product, totalOnHand }] of byProduct.entries()) {
+    if (totalOnHand > product.reorderPoint) continue;
+    if (pendingByProduct.has(productId)) continue;
+
+    const supplierLink = product.supplierProducts?.[0];
+    const shortfall = product.reorderPoint - totalOnHand;
+    let urgency = 'LOW';
+    if (totalOnHand <= 0) urgency = 'CRITICAL';
+    else if (totalOnHand < product.reorderPoint / 4) urgency = 'HIGH';
+    else if (totalOnHand < product.reorderPoint / 2) urgency = 'MEDIUM';
+
+    await prisma.reorderRecommendation.create({
+      data: {
+        productId,
+        suggestedQty: product.reorderQty || shortfall,
+        targetSupplierId: supplierLink?.supplierId || null,
+        urgency,
+        reasoning: {
+          totalOnHand,
+          reorderPoint: product.reorderPoint,
+          shortfall,
+          supplierName: supplierLink?.supplier?.name || null,
+          leadTimeDays: supplierLink?.supplier?.leadTimeDays || null,
+        },
+        status: 'PENDING',
+      },
+    });
+    created++;
+  }
+
+  await logEvent({ eventType: 'REORDER_GENERATED', entityType: 'ReorderRecommendation', actorId: req.user?.id, payload: { created }, sourceIp: req.ip });
+  res.json({ created, totalPending: existingPending.length + created });
+}
+
+async function listSavedReorderRecommendations(req, res) {
+  const { status = 'PENDING' } = req.query;
+  const rows = await prisma.reorderRecommendation.findMany({
+    where: { status },
+    orderBy: [{ urgency: 'desc' }, { createdAt: 'desc' }],
+    include: { product: { select: { id: true, sku: true, name: true, uom: true, reorderPoint: true } } },
+  });
+  res.json(rows);
+}
+
+async function dismissReorderRecommendation(req, res) {
+  const rec = await prisma.reorderRecommendation.findUnique({ where: { id: req.params.id } });
+  if (!rec) return res.status(404).json({ error: 'Recommendation not found' });
+  const updated = await prisma.reorderRecommendation.update({ where: { id: rec.id }, data: { status: 'DISMISSED' } });
+  await logEvent({ eventType: 'REORDER_DISMISSED', entityType: 'ReorderRecommendation', entityId: rec.id, actorId: req.user?.id, sourceIp: req.ip });
+  res.json(updated);
 }
 
 async function cancelCycleCount(req, res) {
@@ -933,7 +1132,41 @@ module.exports = {
   reportStockSnapshot,
   reportMovementHistory,
   reportValuationSummary,
+  getSummary,
+  scanAlerts,
+  listOpenAlerts,
+  acknowledgeAlert,
+  generateReorderRecommendations,
+  listSavedReorderRecommendations,
+  dismissReorderRecommendation,
 };
+
+async function getSummary(req, res) {
+  const now = new Date();
+  const in90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  const [totalSkus, valuation, stockLevels, expiringLots, quarantinedLots, openTransfers, openCounts] = await Promise.all([
+    prisma.product.count({ where: { isActive: true } }),
+    getInventoryValuation({}),
+    prisma.stockLevel.findMany({ include: { product: { select: { reorderPoint: true, isActive: true } } } }),
+    prisma.lot.count({ where: { expiryDate: { lte: in90Days, gte: now }, qtyRemaining: { gt: 0 } } }),
+    prisma.lot.aggregate({ where: { qaStatus: 'QUARANTINED' }, _sum: { qtyRemaining: true } }),
+    prisma.stockTransfer.count({ where: { status: { in: ['DRAFT', 'IN_TRANSIT', 'PARTIALLY_RECEIVED'] } } }),
+    prisma.cycleCount.count({ where: { status: 'OPEN' } }),
+  ]);
+
+  const lowStockCount = stockLevels.filter((s) => s.product?.isActive && s.product.reorderPoint != null && s.onHand <= s.product.reorderPoint).length;
+
+  res.json({
+    totalSkus,
+    totalValue: valuation.totalValue,
+    lowStockCount,
+    expiringSoonCount: expiringLots,
+    quarantinedQty: quarantinedLots._sum.qtyRemaining || 0,
+    openTransfers,
+    openCycleCounts: openCounts,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Report helpers

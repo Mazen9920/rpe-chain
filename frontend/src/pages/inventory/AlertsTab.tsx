@@ -5,8 +5,8 @@
  *  2. Zero-stock alerts — active products with 0 on-hand in any warehouse
  */
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, BellOff, Clock, Package2 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AlertCircle, AlertTriangle, BellOff, Check, Clock, Package2, Sparkles } from 'lucide-react';
 import { inventoryService } from '../../services';
 
 interface ExpiryAlert {
@@ -43,6 +43,7 @@ const SEVERITY_ORDER: Record<string, number> = { EXPIRED: 0, CRITICAL: 1, WARNIN
 type SeverityFilter = 'ALL' | 'EXPIRED' | 'CRITICAL' | 'WARNING' | 'WATCH';
 
 export default function AlertsTab() {
+  const qc = useQueryClient();
   const [expiryFilter, setExpiryFilter] = useState<SeverityFilter>('ALL');
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
@@ -50,6 +51,29 @@ export default function AlertsTab() {
     queryKey: ['inventory', 'alerts'],
     queryFn: inventoryService.alerts,
     refetchInterval: 5 * 60 * 1000, // refresh every 5 min
+  });
+
+  const { data: openPersisted } = useQuery<{
+    alerts: Array<{ id: string; type: string; severity: string; reasoning: string; createdAt: string; product: { sku: string; name: string } | null }>;
+    counts: Record<string, number>;
+    total: number;
+  }>({
+    queryKey: ['alerts', 'open'],
+    queryFn: () => inventoryService.openAlerts(50),
+    refetchInterval: 60_000,
+  });
+
+  const scan = useMutation({
+    mutationFn: inventoryService.scanAlerts,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts', 'open'] });
+      qc.invalidateQueries({ queryKey: ['inventory', 'alerts'] });
+    },
+  });
+
+  const ack = useMutation({
+    mutationFn: inventoryService.acknowledgeAlert,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts', 'open'] }),
   });
 
   const dismiss = (key: string) => setDismissed((d) => new Set([...d, key]));
@@ -83,12 +107,69 @@ export default function AlertsTab() {
             </p>
             {data ? (
               <p className={`text-xs ${totalActive > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                {data.summary.expiry} expiry · {data.summary.zeroStock} zero-stock
+                {data.summary.expiry} expiry · {data.summary.zeroStock} zero-stock · {openPersisted?.total ?? 0} persisted open
               </p>
             ) : null}
           </div>
         </div>
+        <button
+          onClick={() => scan.mutate()}
+          disabled={scan.isPending}
+          className="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
+        >
+          <Sparkles size={13} />
+          {scan.isPending ? 'Scanning…' : 'Scan & Persist Alerts'}
+        </button>
       </div>
+
+      {/* Persisted Alerts (audit trail) */}
+      {openPersisted && openPersisted.alerts.length > 0 ? (
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <AlertCircle size={16} className="text-slate-500" />
+            <h3 className="font-semibold text-slate-800">Persisted Open Alerts</h3>
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-700">{openPersisted.total}</span>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50">
+                  {['Severity', 'Type', 'Product', 'Reasoning', 'Created', 'Actions'].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left font-medium text-slate-500 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {openPersisted.alerts.map((a) => (
+                  <tr key={a.id} className="hover:bg-slate-50">
+                    <td className="px-5 py-3">
+                      <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                        a.severity === 'CRITICAL' ? 'bg-red-100 text-red-700' :
+                        a.severity === 'HIGH' ? 'bg-orange-100 text-orange-700' :
+                        a.severity === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
+                        'bg-yellow-100 text-yellow-700'
+                      }`}>{a.severity}</span>
+                    </td>
+                    <td className="px-5 py-3 font-mono text-xs text-slate-500">{a.type}</td>
+                    <td className="px-5 py-3">
+                      {a.product ? (<><p className="font-medium text-slate-800">{a.product.name}</p><p className="font-mono text-xs text-slate-400">{a.product.sku}</p></>) : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">{a.reasoning}</td>
+                    <td className="px-5 py-3 text-xs text-slate-400">{new Date(a.createdAt).toLocaleString()}</td>
+                    <td className="px-5 py-3">
+                      <button
+                        onClick={() => ack.mutate(a.id)}
+                        disabled={ack.isPending}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-60"
+                      ><Check size={11} /> Acknowledge</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       {/* Section 1 — Expiry Alerts */}
       <section>

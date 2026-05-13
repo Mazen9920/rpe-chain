@@ -1,73 +1,96 @@
 /**
- * ReorderTab — Slice 6: Reorder Recommendations
- * Shows all products at or below their reorder point across all warehouses.
- * Columns: Product, Warehouse, On Hand, Reorder Point, Shortfall, Reorder Qty, Suggested Supplier
- * Actions: Dismiss (session-only hide) — full PO creation is handled in the Purchasing section.
+ * ReorderTab — Phase 1 final: persistent reorder recommendations.
+ * Reads saved ReorderRecommendation rows (status=PENDING) and lets the user
+ * (1) generate fresh recommendations from current stock vs reorder points
+ * (2) dismiss recommendations (persisted, status=DISMISSED).
  */
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, PackageSearch } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, PackageSearch, Sparkles, X } from 'lucide-react';
 import { inventoryService } from '../../services';
 
-interface ReorderRow {
+interface SavedRow {
+  id: string;
   productId: string;
-  warehouseId: string;
-  product: { id: string; sku: string; name: string; uom: string; reorderPoint: number | null; reorderQty: number | null };
-  warehouse: { id: string; code: string; name: string; currency: string };
-  onHand: number;
-  reorderPoint: number | null;
-  reorderQty: number | null;
-  shortfall: number;
-  suggestedSupplier: { id: string; code: string; name: string } | null;
-  suggestedSupplierProduct: { unitCost: number | null; leadTimeDays: number | null } | null;
+  suggestedQty: number;
+  urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  reasoning: {
+    totalOnHand?: number;
+    reorderPoint?: number;
+    shortfall?: number;
+    supplierName?: string | null;
+    leadTimeDays?: number | null;
+  };
+  createdAt: string;
+  product: { id: string; sku: string; name: string; uom: string; reorderPoint: number | null };
+  targetSupplier: { id: string; code: string; name: string } | null;
 }
 
-function urgencyClass(shortfall: number, reorderPoint: number | null): string {
-  if (!reorderPoint) return '';
-  const pct = shortfall / reorderPoint;
-  if (pct >= 1) return 'bg-red-50';
-  if (pct >= 0.5) return 'bg-amber-50';
-  return '';
-}
+const URGENCY_BG: Record<string, string> = {
+  CRITICAL: 'bg-red-50',
+  HIGH:     'bg-orange-50',
+  MEDIUM:   'bg-amber-50',
+  LOW:      '',
+};
+
+const URGENCY_PILL: Record<string, string> = {
+  CRITICAL: 'bg-red-100 text-red-700',
+  HIGH:     'bg-orange-100 text-orange-700',
+  MEDIUM:   'bg-amber-100 text-amber-700',
+  LOW:      'bg-slate-100 text-slate-600',
+};
 
 export default function ReorderTab() {
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const qc = useQueryClient();
 
-  const { data: rows = [], isLoading, isError, refetch } = useQuery<ReorderRow[]>({
-    queryKey: ['inventory', 'reorder-recommendations'],
-    queryFn: inventoryService.reorderRecommendations,
+  const { data: rows = [], isLoading, isError, refetch } = useQuery<SavedRow[]>({
+    queryKey: ['inventory', 'reorder-saved'],
+    queryFn: () => inventoryService.savedReorder('PENDING'),
   });
 
-  const visible = rows.filter((r) => !dismissed.has(`${r.productId}:${r.warehouseId}`));
+  const generate = useMutation({
+    mutationFn: inventoryService.generateReorder,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['inventory', 'reorder-saved'] }),
+  });
 
-  const dismiss = (productId: string, warehouseId: string) =>
-    setDismissed((d) => new Set([...d, `${productId}:${warehouseId}`]));
+  const dismiss = useMutation({
+    mutationFn: inventoryService.dismissReorder,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['inventory', 'reorder-saved'] }),
+  });
 
   return (
     <div className="space-y-4">
-      {/* Summary banner */}
       <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
         <div className="flex items-center gap-3">
           <AlertTriangle size={20} className="text-amber-600" />
           <div>
             <p className="font-semibold text-amber-800">
-              {visible.length === 0 ? 'No reorder alerts' : `${visible.length} product${visible.length > 1 ? 's' : ''} need restocking`}
+              {rows.length === 0 ? 'No pending recommendations' : `${rows.length} saved reorder recommendation${rows.length > 1 ? 's' : ''}`}
             </p>
-            <p className="text-xs text-amber-700">Based on current on-hand vs. reorder point thresholds.</p>
+            <p className="text-xs text-amber-700">Persisted in the ReorderRecommendation table. Drafted POs and dismissals are tracked.</p>
           </div>
         </div>
-        <button onClick={() => refetch()} className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100">Refresh</button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+          >
+            <Sparkles size={13} />
+            {generate.isPending ? 'Generating…' : 'Generate Recommendations'}
+          </button>
+          <button onClick={() => refetch()} className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100">Refresh</button>
+        </div>
       </div>
 
       {isLoading ? (
-        <div className="rounded-xl border border-slate-100 bg-white p-8 text-center text-slate-500">Calculating reorder recommendations…</div>
+        <div className="rounded-xl border border-slate-100 bg-white p-8 text-center text-slate-500">Loading recommendations…</div>
       ) : isError ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-red-600">Failed to load recommendations.</div>
-      ) : visible.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="rounded-xl border border-slate-100 bg-white p-12 text-center">
           <PackageSearch size={40} className="mx-auto mb-3 text-slate-300" />
-          <p className="font-medium text-slate-600">All stock levels are above reorder points.</p>
-          <p className="mt-1 text-sm text-slate-400">No action required right now.</p>
+          <p className="font-medium text-slate-600">No pending reorder recommendations.</p>
+          <p className="mt-1 text-sm text-slate-400">Click "Generate Recommendations" to scan stock levels.</p>
         </div>
       ) : (
         <div className="rounded-xl border border-slate-100 bg-white shadow-sm">
@@ -75,48 +98,36 @@ export default function ReorderTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50">
-                  {['Product', 'Warehouse', 'On Hand', 'Reorder Point', 'Shortfall', 'Reorder Qty', 'Supplier', 'Lead Time', 'Unit Cost', 'Actions'].map((h) => (
+                  {['Urgency', 'Product', 'On Hand', 'Reorder Point', 'Shortfall', 'Suggested Qty', 'Supplier', 'Lead Time', 'Created', 'Actions'].map((h) => (
                     <th key={h} className="px-5 py-3 text-left font-medium text-slate-500 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visible.map((row) => (
-                  <tr key={`${row.productId}:${row.warehouseId}`} className={`hover:bg-slate-50 ${urgencyClass(row.shortfall, row.reorderPoint)}`}>
+                {rows.map((row) => (
+                  <tr key={row.id} className={`hover:bg-slate-50 ${URGENCY_BG[row.urgency] ?? ''}`}>
+                    <td className="px-5 py-3"><span className={`rounded px-2 py-0.5 text-[10px] font-bold ${URGENCY_PILL[row.urgency]}`}>{row.urgency}</span></td>
                     <td className="px-5 py-3">
                       <p className="font-medium text-slate-800">{row.product.name}</p>
                       <p className="font-mono text-xs text-slate-400">{row.product.sku}</p>
                     </td>
-                    <td className="px-5 py-3 text-slate-600">{row.warehouse.code} · {row.warehouse.name}</td>
-                    <td className="px-5 py-3">
-                      <span className={`font-semibold ${row.onHand <= 0 ? 'text-red-600' : 'text-amber-700'}`}>{row.onHand}</span>
-                      <span className="ml-1 text-xs text-slate-400">{row.product.uom}</span>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{row.reorderPoint ?? '—'}</td>
-                    <td className="px-5 py-3">
-                      <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">−{row.shortfall}</span>
-                    </td>
-                    <td className="px-5 py-3 font-semibold text-slate-700">{row.reorderQty ?? '—'}</td>
+                    <td className="px-5 py-3 font-semibold text-slate-700">{row.reasoning.totalOnHand ?? '—'} <span className="text-xs font-normal text-slate-400">{row.product.uom}</span></td>
+                    <td className="px-5 py-3 text-slate-600">{row.reasoning.reorderPoint ?? row.product.reorderPoint ?? '—'}</td>
+                    <td className="px-5 py-3"><span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">−{row.reasoning.shortfall ?? 0}</span></td>
+                    <td className="px-5 py-3 font-semibold text-slate-700">{row.suggestedQty}</td>
                     <td className="px-5 py-3 text-slate-600">
-                      {row.suggestedSupplier
-                        ? <><p className="font-medium">{row.suggestedSupplier.name}</p><p className="text-xs text-slate-400">{row.suggestedSupplier.code}</p></>
+                      {row.targetSupplier
+                        ? <><p className="font-medium">{row.targetSupplier.name}</p><p className="text-xs text-slate-400">{row.targetSupplier.code}</p></>
                         : <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-5 py-3 text-slate-600">
-                      {row.suggestedSupplierProduct?.leadTimeDays != null
-                        ? `${row.suggestedSupplierProduct.leadTimeDays}d`
-                        : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">
-                      {row.suggestedSupplierProduct?.unitCost != null
-                        ? `${row.warehouse.currency} ${Number(row.suggestedSupplierProduct.unitCost).toFixed(2)}`
-                        : '—'}
-                    </td>
+                    <td className="px-5 py-3 text-slate-600">{row.reasoning.leadTimeDays != null ? `${row.reasoning.leadTimeDays}d` : '—'}</td>
+                    <td className="px-5 py-3 text-xs text-slate-400">{new Date(row.createdAt).toLocaleDateString()}</td>
                     <td className="px-5 py-3">
                       <button
-                        onClick={() => dismiss(row.productId, row.warehouseId)}
-                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100"
-                      >Dismiss</button>
+                        onClick={() => dismiss.mutate(row.id)}
+                        disabled={dismiss.isPending}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-60"
+                      ><X size={11} /> Dismiss</button>
                     </td>
                   </tr>
                 ))}
@@ -125,13 +136,6 @@ export default function ReorderTab() {
           </div>
         </div>
       )}
-
-      {dismissed.size > 0 ? (
-        <p className="text-center text-xs text-slate-400">
-          {dismissed.size} alert{dismissed.size > 1 ? 's' : ''} dismissed this session.{' '}
-          <button onClick={() => setDismissed(new Set())} className="underline hover:text-slate-600">Show all</button>
-        </p>
-      ) : null}
     </div>
   );
 }

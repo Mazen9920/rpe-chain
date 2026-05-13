@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { AlertCircle, AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, FileBarChart2, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
+import { inventoryService } from '../services';
 import type { InventoryTab } from '../types/inventory';
 import AlertsTab from './inventory/AlertsTab';
 import CycleCountsTab from './inventory/CycleCountsTab';
@@ -36,6 +38,20 @@ export default function InventoryPage() {
   const [warehouseModalOpen, setWarehouseModalOpen] = useState(false);
   const activeTab = normalizeTab(params.get('tab'));
 
+  const { data: summary } = useQuery<{
+    totalSkus: number;
+    totalValue: number;
+    lowStockCount: number;
+    expiringSoonCount: number;
+    quarantinedQty: number;
+    openTransfers: number;
+    openCycleCounts: number;
+  }>({
+    queryKey: ['inventory', 'summary'],
+    queryFn: inventoryService.summary,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   const activeTitle = useMemo(() => tabs.find((tab) => tab.id === activeTab)?.label ?? 'Products', [activeTab]);
 
   const changeTab = (tab: InventoryTab) => {
@@ -59,6 +75,24 @@ export default function InventoryPage() {
           <Warehouse size={16} />
           Manage Warehouses
         </button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        {[
+          { label: 'Total SKUs',       value: summary?.totalSkus ?? '—',                                  tone: 'text-slate-700' },
+          { label: 'Inventory Value',  value: summary ? `$${summary.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—', tone: 'text-slate-700' },
+          { label: 'Low Stock',        value: summary?.lowStockCount ?? '—',     tone: (summary?.lowStockCount ?? 0) > 0 ? 'text-amber-600' : 'text-slate-700' },
+          { label: 'Expiring ≤90d',    value: summary?.expiringSoonCount ?? '—', tone: (summary?.expiringSoonCount ?? 0) > 0 ? 'text-orange-600' : 'text-slate-700' },
+          { label: 'Quarantined Qty',  value: summary?.quarantinedQty ?? '—',    tone: (summary?.quarantinedQty ?? 0) > 0 ? 'text-red-600' : 'text-slate-700' },
+          { label: 'Open Transfers',   value: summary?.openTransfers ?? '—',     tone: 'text-slate-700' },
+          { label: 'Open Counts',      value: summary?.openCycleCounts ?? '—',   tone: 'text-slate-700' },
+        ].map((c) => (
+          <div key={c.label} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{c.label}</p>
+            <p className={`mt-1 text-lg font-bold ${c.tone}`}>{c.value}</p>
+          </div>
+        ))}
       </div>
 
       <div className="mb-5 flex overflow-x-auto rounded-xl border border-slate-100 bg-white p-1 shadow-sm">

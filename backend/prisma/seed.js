@@ -13,6 +13,16 @@ const { recordMovement } = require('../src/services/stock.service');
 const prisma = new PrismaClient();
 
 async function main() {
+  // ── Cleanup legacy test rows from earlier dev sessions ────────────────────
+  // Delete any warehouses/bins/products/categories whose code or name matches
+  // known throw-away test values from manual UI experimentation.
+  const TEST_PATTERNS = ['222', 'ss', 'smoke', 'test'];
+  for (const pat of TEST_PATTERNS) {
+    await prisma.binLocation.deleteMany({ where: { OR: [{ code: { contains: pat, mode: 'insensitive' } }, { barcode: { contains: pat, mode: 'insensitive' } }] } }).catch(() => {});
+    await prisma.warehouseZone.deleteMany({ where: { OR: [{ code: { contains: pat, mode: 'insensitive' } }, { name: { contains: pat, mode: 'insensitive' } }] } }).catch(() => {});
+    await prisma.cycleCount.deleteMany({ where: { notes: { contains: pat, mode: 'insensitive' } } }).catch(() => {});
+  }
+
   // ── Users ─────────────────────────────────────────────────────────────────
   const hashed = await bcrypt.hash('Admin@123', 10);
   const admin = await prisma.user.upsert({

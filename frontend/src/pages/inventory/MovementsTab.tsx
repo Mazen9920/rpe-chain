@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { inventoryService } from '../../services';
+import ExportCsvButton from '../../components/ExportCsvButton';
 import type { StockMovement } from '../../types/inventory';
 
 export default function MovementsTab() {
@@ -10,9 +11,12 @@ export default function MovementsTab() {
 
   return (
     <div className="rounded-xl border border-slate-100 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <h3 className="font-semibold text-slate-800">Movement Ledger</h3>
-        <p className="text-sm text-slate-500">Latest 100 append-only stock movements.</p>
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div>
+          <h3 className="font-semibold text-slate-800">Movement Ledger</h3>
+          <p className="text-sm text-slate-500">Latest 100 append-only stock movements.</p>
+        </div>
+        <ExportCsvButton path="/inventory/reports/movement-history" filename="movement-history.csv" />
       </div>
       {isError ? <div className="px-5 py-8 text-sm text-red-600">Unable to load movements.</div> : (
         <div className="overflow-x-auto">

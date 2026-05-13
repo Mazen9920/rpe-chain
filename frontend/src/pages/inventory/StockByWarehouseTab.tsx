@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { SlidersHorizontal } from 'lucide-react';
 import { inventoryService } from '../../services';
+import ExportCsvButton from '../../components/ExportCsvButton';
 import type { StockLevel } from '../../types/inventory';
 import StockAdjustmentModal from './StockAdjustmentModal';
 
@@ -25,7 +26,8 @@ export default function StockByWarehouseTab() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex justify-end gap-2">
+        <ExportCsvButton path="/inventory/reports/stock-snapshot" filename="stock-snapshot.csv" />
         <button onClick={() => setAdjusting({})} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
           <SlidersHorizontal size={16} />
           Adjust Stock
