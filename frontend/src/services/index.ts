@@ -107,3 +107,31 @@ export const inventoryService = {
 export const dashboardService = {
   summary: () => api.get('/dashboard/summary').then((r) => r.data),
 };
+
+export const bomService = {
+  list: (params?: { productId?: string; includeArchived?: boolean }) =>
+    api.get('/boms', { params }).then((r) => r.data),
+  get: (id: string) => api.get(`/boms/${id}`).then((r) => r.data),
+  createDraft: (data: { productId: string; notes?: string; lines: Array<{ componentProductId: string; qtyPer: number; uom?: string; scrapFactorPct?: number; position?: number; notes?: string }> }) =>
+    api.post('/boms', data).then((r) => r.data),
+  updateDraft: (id: string, data: object) => api.put(`/boms/${id}`, data).then((r) => r.data),
+  activate: (id: string) => api.post(`/boms/${id}/activate`).then((r) => r.data),
+  archive: (id: string) => api.post(`/boms/${id}/archive`).then((r) => r.data),
+  clone: (id: string) => api.post(`/boms/${id}/clone`).then((r) => r.data),
+  costRollup: (productId: string, params?: { mode?: 'standard' | 'fifo'; warehouseId?: string }) =>
+    api.get(`/products/${productId}/cost-rollup`, { params }).then((r) => r.data),
+};
+
+export const productionService = {
+  list: (params?: { status?: string; productId?: string; warehouseId?: string }) =>
+    api.get('/production-orders', { params }).then((r) => r.data),
+  get: (id: string) => api.get(`/production-orders/${id}`).then((r) => r.data),
+  plan: (data: { productId: string; plannedQty: number; warehouseId: string; bomId?: string; notes?: string }) =>
+    api.post('/production-orders/plan', data).then((r) => r.data),
+  release: (id: string) => api.post(`/production-orders/${id}/release`).then((r) => r.data),
+  consume: (id: string) => api.post(`/production-orders/${id}/consume`).then((r) => r.data),
+  output: (id: string, data: { qty: number; scrapQty?: number; lotNumber?: string; expiryDate?: string }) =>
+    api.post(`/production-orders/${id}/output`, data).then((r) => r.data),
+  cancel: (id: string, reason?: string) =>
+    api.post(`/production-orders/${id}/cancel`, { reason }).then((r) => r.data),
+};

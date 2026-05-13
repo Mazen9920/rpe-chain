@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import InventoryPage from './pages/InventoryPage';
+import ManufacturingPage from './pages/ManufacturingPage';
 import SuppliersPage from './pages/SuppliersPage';
 import OrdersPage from './pages/OrdersPage';
 import ShipmentsPage from './pages/ShipmentsPage';
@@ -23,6 +24,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
+              <Route path="/manufacturing" element={<ManufacturingPage />} />
               <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/shipments" element={<ShipmentsPage />} />
