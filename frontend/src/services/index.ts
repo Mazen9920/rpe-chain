@@ -290,6 +290,25 @@ export const alertsService = {
   scan: () => api.post('/alerts/scan').then((r) => r.data),
 };
 
+export type NotificationSubscription = {
+  id: string;
+  userId: string;
+  alertType: string | null;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | null;
+  channel: 'EMAIL' | 'SMS' | 'SLACK';
+  isActive: boolean;
+};
+
+export const notificationsService = {
+  listSubscriptions: () =>
+    api.get<NotificationSubscription[]>('/notifications/subscriptions').then((r) => r.data),
+  replaceSubscriptions: (items: Array<Partial<NotificationSubscription>>) =>
+    api.put<NotificationSubscription[]>('/notifications/subscriptions', items).then((r) => r.data),
+  seedAdminDefaults: () =>
+    api.post('/notifications/subscriptions/seed-admin-defaults').then((r) => r.data),
+  runDigest: () => api.post('/notifications/digest/run').then((r) => r.data),
+};
+
 export const reportsService = {
   apAging: (params?: { supplierId?: string }) => api.get('/reports/ap-aging', { params }).then((r) => r.data),
   supplierScorecards: () => api.get('/reports/supplier-scorecards').then((r) => r.data),

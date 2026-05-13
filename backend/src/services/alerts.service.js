@@ -48,7 +48,16 @@ async function upsertAlert(stillActive, openByKey, alert) {
     }
     return;
   }
-  await prisma.alert.create({ data: { ...data, status: 'OPEN' } });
+  const created = await prisma.alert.create({ data: { ...data, status: 'OPEN' } });
+
+  // Fan out to subscribed users via outbox. Failure must not block alert creation.
+  try {
+    const notifications = require('./notifications.service');
+    await notifications.dispatchAlertEmail(created);
+  } catch (e) {
+    // Use console here — logger import path may differ across older callers.
+    console.error('[alerts] notifications dispatch failed:', e.message);
+  }
 }
 
 async function loadOpenAlertsForTypes(types) {
