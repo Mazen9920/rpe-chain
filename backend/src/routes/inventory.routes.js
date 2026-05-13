@@ -46,4 +46,8 @@ router.put('/cycle-counts/:id/lines/:lineId', requireRole('ADMIN', 'WAREHOUSE'),
 router.post('/cycle-counts/:id/post', requireRole('ADMIN', 'WAREHOUSE'), ctrl.postCycleCount);
 router.post('/cycle-counts/:id/cancel', requireRole('ADMIN', 'WAREHOUSE'), ctrl.cancelCycleCount);
 
+router.get('/reports/stock-snapshot', ctrl.reportStockSnapshot);
+router.get('/reports/movement-history', ctrl.reportMovementHistory);
+router.get('/reports/valuation-summary', ctrl.reportValuationSummary);
+
 module.exports = router;

@@ -83,6 +83,18 @@ export const inventoryService = {
   cancelCycleCount: (id: string) => api.post(`/inventory/cycle-counts/${id}/cancel`).then((r) => r.data),
   reorderRecommendations: () => api.get('/inventory/reorder-recommendations').then((r) => r.data),
   alerts: () => api.get('/inventory/alerts').then((r) => r.data),
+  reportStockSnapshot: (params?: object) => api.get('/inventory/reports/stock-snapshot', { params }).then((r) => r.data),
+  reportMovementHistory: (params?: object) => api.get('/inventory/reports/movement-history', { params }).then((r) => r.data),
+  reportValuationSummary: (params?: object) => api.get('/inventory/reports/valuation-summary', { params }).then((r) => r.data),
+  downloadCsv: (path: string, params: object, filename: string) =>
+    api.get(path, { params: { ...params, format: 'csv' }, responseType: 'blob' }).then((r) => {
+      const url = URL.createObjectURL(new Blob([r.data as BlobPart], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }),
 };
 
 export const dashboardService = {

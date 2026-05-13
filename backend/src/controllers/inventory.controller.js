@@ -930,4 +930,178 @@ module.exports = {
   cancelCycleCount,
   getReorderRecommendations,
   getAlerts,
+  reportStockSnapshot,
+  reportMovementHistory,
+  reportValuationSummary,
 };
+
+// ---------------------------------------------------------------------------
+// Report helpers
+// ---------------------------------------------------------------------------
+
+function toCsvRow(values) {
+  return values
+    .map((v) => {
+      const s = v == null ? '' : String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    })
+    .join(',');
+}
+
+async function reportStockSnapshot(req, res) {
+  const { warehouseId, format = 'json' } = req.query;
+  const where = {};
+  if (warehouseId) where.warehouseId = warehouseId;
+
+  const rows = await prisma.stockLevel.findMany({
+    where,
+    include: {
+      product: { select: { id: true, sku: true, name: true, uom: true, reorderPoint: true } },
+      warehouse: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: [{ warehouse: { code: 'asc' } }, { product: { sku: 'asc' } }],
+  });
+
+  if (format === 'csv') {
+    const header = toCsvRow(['Warehouse Code', 'Warehouse Name', 'SKU', 'Product Name', 'UOM', 'On Hand', 'Reserved', 'Available', 'Reorder Point']);
+    const lines = rows.map((r) =>
+      toCsvRow([r.warehouse.code, r.warehouse.name, r.product.sku, r.product.name, r.product.uom, r.onHand, r.reserved, r.onHand - r.reserved, r.product.reorderPoint ?? '']),
+    );
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="stock-snapshot.csv"');
+    return res.send([header, ...lines].join('\r\n'));
+  }
+
+  res.json(rows.map((r) => ({
+    warehouseCode: r.warehouse.code,
+    warehouseName: r.warehouse.name,
+    sku: r.product.sku,
+    productName: r.product.name,
+    uom: r.product.uom,
+    onHand: r.onHand,
+    reserved: r.reserved,
+    available: r.onHand - r.reserved,
+    reorderPoint: r.product.reorderPoint,
+  })));
+}
+
+async function reportMovementHistory(req, res) {
+  const { warehouseId, productId, from, to, format = 'json' } = req.query;
+  const where = {};
+  if (warehouseId) where.warehouseId = warehouseId;
+  if (productId) where.productId = productId;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from);
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      where.createdAt.lte = toDate;
+    }
+  }
+
+  const movements = await prisma.stockMovement.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: 5000,
+    include: {
+      product: { select: { sku: true, name: true, uom: true } },
+      warehouse: { select: { code: true, name: true } },
+      lot: { select: { lotNumber: true } },
+    },
+  });
+
+  if (format === 'csv') {
+    const header = toCsvRow(['Date', 'SKU', 'Product Name', 'Warehouse', 'Qty', 'UOM', 'Reason Code', 'Lot', 'Source Doc', 'Notes']);
+    const lines = movements.map((m) =>
+      toCsvRow([
+        new Date(m.createdAt).toISOString(),
+        m.product.sku,
+        m.product.name,
+        m.warehouse.code,
+        m.qty,
+        m.product.uom,
+        m.reasonCode,
+        m.lot?.lotNumber ?? '',
+        m.sourceDocId ?? '',
+        m.notes ?? '',
+      ]),
+    );
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="movement-history.csv"');
+    return res.send([header, ...lines].join('\r\n'));
+  }
+
+  res.json(movements.map((m) => ({
+    date: m.createdAt,
+    sku: m.product.sku,
+    productName: m.product.name,
+    warehouse: m.warehouse.code,
+    qty: m.qty,
+    uom: m.product.uom,
+    reasonCode: m.reasonCode,
+    lot: m.lot?.lotNumber ?? null,
+    sourceDoc: m.sourceDocId ?? null,
+    notes: m.notes ?? null,
+  })));
+}
+
+async function reportValuationSummary(req, res) {
+  const { warehouseId, productId, format = 'json' } = req.query;
+  const where = {};
+  if (warehouseId) where.warehouseId = warehouseId;
+  if (productId) where.productId = productId;
+
+  // For each StockLevel, compute the value from live FIFO cost layers
+  const levels = await prisma.stockLevel.findMany({
+    where,
+    include: {
+      product: { select: { sku: true, name: true, uom: true } },
+      warehouse: { select: { code: true, name: true } },
+    },
+    orderBy: [{ warehouse: { code: 'asc' } }, { product: { sku: 'asc' } }],
+  });
+
+  // Aggregate cost layers per product+warehouse
+  const layerWhere = { status: 'ACTIVE', qtyRemaining: { gt: 0 } };
+  if (warehouseId) layerWhere.warehouseId = warehouseId;
+  if (productId) layerWhere.productId = productId;
+  const layers = await prisma.costLayer.findMany({ where: layerWhere });
+
+  const costMap = {};
+  for (const l of layers) {
+    const key = `${l.productId}:${l.warehouseId}`;
+    if (!costMap[key]) costMap[key] = { totalQty: 0, totalCost: 0 };
+    costMap[key].totalQty += l.qtyRemaining;
+    costMap[key].totalCost += l.qtyRemaining * Number(l.functionalUnitCost);
+  }
+
+  const rows = levels.map((r) => {
+    const key = `${r.productId}:${r.warehouseId}`;
+    const c = costMap[key] || { totalQty: 0, totalCost: 0 };
+    const avgUnitCost = c.totalQty > 0 ? c.totalCost / c.totalQty : 0;
+    const totalValue = avgUnitCost * r.onHand;
+    return {
+      sku: r.product.sku,
+      productName: r.product.name,
+      uom: r.product.uom,
+      warehouseCode: r.warehouse.code,
+      warehouseName: r.warehouse.name,
+      onHand: r.onHand,
+      avgUnitCost: Math.round(avgUnitCost * 10000) / 10000,
+      totalValue: Math.round(totalValue * 100) / 100,
+    };
+  });
+
+  if (format === 'csv') {
+    const header = toCsvRow(['SKU', 'Product Name', 'UOM', 'Warehouse', 'On Hand', 'Avg Unit Cost', 'Total Value']);
+    const lines = rows.map((r) =>
+      toCsvRow([r.sku, r.productName, r.uom, r.warehouseCode, r.onHand, r.avgUnitCost, r.totalValue]),
+    );
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="valuation-summary.csv"');
+    return res.send([header, ...lines].join('\r\n'));
+  }
+
+  res.json(rows);
+}
