@@ -37,6 +37,12 @@ async function main() {
   ]) {
     await prisma.user.upsert({ where: { email: u.email }, update: {}, create: { ...u, password: hashed } });
   }
+  const prodHashed = await bcrypt.hash('Prod@123', 10);
+  await prisma.user.upsert({
+    where: { email: 'production@rpechain.com' },
+    update: {},
+    create: { email: 'production@rpechain.com', password: prodHashed, name: 'Production Operator', role: 'PRODUCTION' },
+  });
 
   // ── Warehouses ────────────────────────────────────────────────────────────
   const whDXB = await prisma.warehouse.upsert({
@@ -214,10 +220,88 @@ async function main() {
     }
   }
 
+  // ── Manufacturing: tag types, create assembly + active BOM + sample DRAFT order ──
+  // Tag existing products
+  const componentSkus = ['RPE-HMR-7501', 'RPE-HMR-7502', 'RPE-FLT-2091'];
+  await prisma.product.updateMany({ where: { sku: { in: componentSkus } }, data: { type: 'COMPONENT' } });
+  await prisma.product.updateMany({ where: { sku: { in: ['RPE-FFR-6800', 'RPE-DSP-N95'] } }, data: { type: 'FINISHED' } });
+
+  // Create assembly (Half-Mask Kit) — finished good with BOM
+  const kit = await prisma.product.upsert({
+    where: { sku: 'RPE-KIT-HMR' },
+    update: {},
+    create: {
+      sku: 'RPE-KIT-HMR',
+      name: 'Half-Mask Respirator Kit (Medium + 1pr P100)',
+      uom: 'EA',
+      categoryId: respirators.id,
+      type: 'FINISHED',
+      isManufactured: true,
+      reorderPoint: 20,
+      reorderQty: 100,
+      costPrice: 30.00,
+      sellingPrice: 55.00,
+      standardLaborCost: 1.50,
+      standardOverheadCost: 0.75,
+    },
+  });
+
+  const hmrMedium = await prisma.product.findUnique({ where: { sku: 'RPE-HMR-7502' } });
+  const filterP100 = await prisma.product.findUnique({ where: { sku: 'RPE-FLT-2091' } });
+
+  const existingBom = await prisma.billOfMaterials.findFirst({ where: { productId: kit.id } });
+  if (!existingBom && hmrMedium && filterP100) {
+    await prisma.billOfMaterials.create({
+      data: {
+        productId: kit.id,
+        version: 1,
+        isActive: true,
+        notes: 'Standard kit assembly: 1 medium half-mask + 1 pair P100 filters',
+        createdById: admin.id,
+        lines: {
+          create: [
+            { componentProductId: hmrMedium.id, qtyPer: 1, uom: 'EA', scrapFactorPct: 0,    position: 1 },
+            { componentProductId: filterP100.id, qtyPer: 1, uom: 'PR', scrapFactorPct: 2.0, position: 2 },
+          ],
+        },
+      },
+    });
+  }
+
+  // Sample DRAFT production order (planner output snapshot for demo)
+  const sampleOrderExists = await prisma.productionOrder.findFirst({ where: { productId: kit.id } });
+  if (!sampleOrderExists) {
+    const year = new Date().getFullYear();
+    const orderNumber = `PO-${year}-00001`;
+    const bom = await prisma.billOfMaterials.findFirst({ where: { productId: kit.id, isActive: true } });
+    if (bom) {
+      await prisma.productionOrder.create({
+        data: {
+          orderNumber,
+          productId: kit.id,
+          bomId: bom.id,
+          warehouseId: whDXB.id,
+          plannedQty: 25,
+          status: 'DRAFT',
+          notes: 'Demo order — release to consume + post output',
+          createdById: admin.id,
+          lines: {
+            create: [
+              { componentProductId: hmrMedium.id, plannedQty: 25, uom: 'EA' },
+              { componentProductId: filterP100.id, plannedQty: 25.5, uom: 'PR' },
+            ],
+          },
+        },
+      });
+    }
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Admin login: admin@rpechain.com / Admin@123');
+  console.log('   Production login: production@rpechain.com / Prod@123');
   console.log('   Warehouses: DXB-01 (AED), UK-01 (GBP), USA-01 (USD)');
-  console.log('   Products: 5 | Suppliers: 2 | Lots: varied expiry scenarios');
+  console.log('   Products: 6 (incl. RPE-KIT-HMR assembly) | Suppliers: 2');
+  console.log('   Manufacturing: 1 active BOM + 1 sample DRAFT order');
 }
 
 main()
