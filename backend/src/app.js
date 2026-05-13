@@ -11,6 +11,8 @@ const purchaseOrderRoutes = require('./routes/purchaseOrder.routes');
 const shipmentRoutes = require('./routes/shipment.routes');
 const inventoryRoutes = require('./routes/inventory.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const bomRoutes = require('./routes/bom.routes');
+const productionRoutes = require('./routes/production.routes');
 
 const app = express();
 
@@ -29,6 +31,8 @@ app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/shipments', shipmentRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/boms', bomRoutes);
+app.use('/api/production-orders', productionRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'rpe-supply-api' }));
