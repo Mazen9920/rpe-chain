@@ -1091,6 +1091,7 @@ model Forecast {
   warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
 
   @@unique([productId, warehouseId, periodStart])
+  @@index([productId, periodStart])
 }
 
 model ReorderRecommendation {
@@ -1114,17 +1115,34 @@ model Alert {
   severity          String   // LOW | MEDIUM | HIGH | CRITICAL
   productId         String?
   supplierId        String?
+  entityType        String?  // optional: cross-module link (Customer | Shipment | SupplierInvoice | etc.)
+  entityId          String?
   payload           Json     // structured data underlying the alert
   reasoning         String   // human-readable explanation
+  audienceRoles     String[] @default([]) // [] = visible to all authenticated users; non-empty = restricted
   status            String   @default("OPEN") // OPEN | ACKNOWLEDGED | SNOOZED | RESOLVED
   acknowledgedById  String?
   acknowledgedAt    DateTime?
   snoozedUntil      DateTime?
+  resolvedAt        DateTime?
+  sourceEventId     String?
   createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   acknowledgedBy User? @relation(fields: [acknowledgedById], references: [id])
 
   @@index([status, severity, createdAt])
+  @@index([status, type])
+  @@index([type, entityType, entityId])
+}
+
+// Persisted thresholds for alert generators. Allows admins to tune triggers without code changes.
+model AlertRule {
+  id        String   @id @default(uuid())
+  type      String   @unique // matches Alert.type
+  enabled   Boolean  @default(true)
+  params    Json     // e.g. { threshold: 0.85, days: 7 }
+  updatedAt DateTime @updatedAt
 }
 
 // ─── Audit ────────────────────────────────────────────────────────────────────

@@ -249,6 +249,36 @@ async function confirmOrder(id, actor, sourceIp) {
   assertTransition(so.status, 'CONFIRMED');
   if (so.lines.length === 0) bad('Order has no lines', 409, 'EMPTY_ORDER');
 
+  // Credit-limit check — WARN ONLY (does not block).
+  const warnings = [];
+  if (so.customerId) {
+    const customer = await prisma.customer.findUnique({
+      where: { id: so.customerId },
+      select: { code: true, name: true, creditLimit: true, currency: true },
+    });
+    if (customer?.creditLimit) {
+      const limit = Number(customer.creditLimit);
+      const others = await prisma.salesOrder.findMany({
+        where: {
+          customerId: so.customerId,
+          id: { not: id },
+          status: { in: ['CONFIRMED', 'ALLOCATED', 'PICKED', 'PACKED', 'SHIPPED'] },
+        },
+        select: { totalAmount: true },
+      });
+      const existingExposure = others.reduce((acc, o) => acc + Number(o.totalAmount), 0);
+      const projected = existingExposure + Number(so.totalAmount);
+      if (projected > limit) {
+        warnings.push({
+          code: 'CREDIT_LIMIT_EXCEEDED',
+          message: `Confirming this order brings ${customer.code} exposure to ${projected.toFixed(2)} ${customer.currency}, exceeding credit limit ${limit.toFixed(2)}.`,
+          projectedExposure: Number(projected.toFixed(2)),
+          creditLimit: limit,
+        });
+      }
+    }
+  }
+
   const updated = await prisma.salesOrder.update({
     where: { id },
     data: { status: 'CONFIRMED', confirmedAt: new Date() },
@@ -259,9 +289,10 @@ async function confirmOrder(id, actor, sourceIp) {
     entityType: 'SalesOrder',
     entityId: id,
     actorId: actor?.id,
-    payload: { orderNumber: so.orderNumber },
+    payload: { orderNumber: so.orderNumber, warnings },
     sourceIp,
   });
+  if (warnings.length) updated.warnings = warnings;
   return updated;
 }
 

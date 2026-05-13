@@ -21,6 +21,9 @@ const apAgingRoutes = require('./routes/apAging.routes');
 const creditNoteRoutes = require('./routes/creditNote.routes');
 const customerRoutes = require('./routes/customer.routes');
 const salesOrderRoutes = require('./routes/salesOrder.routes');
+const alertsRoutes = require('./routes/alerts.routes');
+const reportsRoutes = require('./routes/reports.routes');
+const eventsRoutes = require('./routes/events.routes');
 
 const app = express();
 
@@ -49,6 +52,9 @@ app.use('/api/ap/aging', apAgingRoutes);
 app.use('/api/ap/credit-notes', creditNoteRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/sales-orders', salesOrderRoutes);
+app.use('/api/alerts', alertsRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/events', eventsRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'rpe-supply-api' }));

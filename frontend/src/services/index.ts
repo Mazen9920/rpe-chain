@@ -196,7 +196,8 @@ export const salesOrderService = {
     api.post<SalesOrder>('/sales-orders', data).then((r) => r.data),
   update: (id: string, data: Partial<SalesOrder>) =>
     api.patch<SalesOrder>(`/sales-orders/${id}`, data).then((r) => r.data),
-  confirm: (id: string) => api.post<SalesOrder>(`/sales-orders/${id}/confirm`).then((r) => r.data),
+  confirm: (id: string) =>
+    api.post<SalesOrder & { warnings?: Array<{ code: string; message: string }> }>(`/sales-orders/${id}/confirm`).then((r) => r.data),
   allocate: (id: string) => api.post<SalesOrder>(`/sales-orders/${id}/allocate`).then((r) => r.data),
   pick: (id: string, data: PickPayload) =>
     api.post<SalesOrder>(`/sales-orders/${id}/pick`, data).then((r) => r.data),
@@ -275,6 +276,40 @@ export const inventoryService = {
 
 export const dashboardService = {
   summary: () => api.get('/dashboard/summary').then((r) => r.data),
+  salesTrend: (days = 30) => api.get('/dashboard/sales-trend', { params: { days } }).then((r) => r.data),
+  inventoryTrend: (days = 30) => api.get('/dashboard/inventory-trend', { params: { days } }).then((r) => r.data),
+  alertsTrend: (days = 30) => api.get('/dashboard/alerts-trend', { params: { days } }).then((r) => r.data),
+};
+
+export const alertsService = {
+  list: (params?: { status?: string; type?: string; severity?: string; limit?: number; offset?: number }) =>
+    api.get('/alerts', { params }).then((r) => r.data),
+  acknowledge: (id: string) => api.post(`/alerts/${id}/acknowledge`).then((r) => r.data),
+  snooze: (id: string, snoozedUntil: string) => api.post(`/alerts/${id}/snooze`, { snoozedUntil }).then((r) => r.data),
+  resolve: (id: string) => api.post(`/alerts/${id}/resolve`).then((r) => r.data),
+  scan: () => api.post('/alerts/scan').then((r) => r.data),
+};
+
+export const reportsService = {
+  apAging: (params?: { supplierId?: string }) => api.get('/reports/ap-aging', { params }).then((r) => r.data),
+  supplierScorecards: () => api.get('/reports/supplier-scorecards').then((r) => r.data),
+  salesFulfillment: (params?: { from?: string; to?: string }) => api.get('/reports/sales-fulfillment', { params }).then((r) => r.data),
+  downloadCsv: (path: string, filename: string, params?: Record<string, string>) => {
+    const qs = new URLSearchParams({ ...(params || {}), format: 'csv' }).toString();
+    return api.get(`${path}?${qs}`, { responseType: 'blob' }).then((r) => {
+      const url = window.URL.createObjectURL(r.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    });
+  },
+};
+
+export const eventsService = {
+  list: (params?: { limit?: number; offset?: number; entityType?: string; entityId?: string; eventType?: string }) =>
+    api.get('/events', { params }).then((r) => r.data),
 };
 
 export const bomService = {

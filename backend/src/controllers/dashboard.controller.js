@@ -54,4 +54,98 @@ async function summary(_req, res) {
   });
 }
 
-module.exports = { summary };
+function buildEmptyDays(days) {
+  const out = [];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date(today.getTime() - i * 86400000);
+    out.push({ date: d.toISOString().slice(0, 10), value: 0 });
+  }
+  return out;
+}
+
+function dateKey(d) {
+  const x = new Date(d);
+  x.setUTCHours(0, 0, 0, 0);
+  return x.toISOString().slice(0, 10);
+}
+
+async function salesTrend(req, res) {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 7), 180);
+  const since = new Date(Date.now() - days * 86400000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const orders = await prisma.salesOrder.findMany({
+    where: { orderedAt: { gte: since } },
+    select: { orderedAt: true, totalAmount: true, status: true },
+  });
+  const revenueByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  const countByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  for (const o of orders) {
+    const k = dateKey(o.orderedAt);
+    if (revenueByDay[k] != null) {
+      revenueByDay[k] += Number(o.totalAmount);
+      countByDay[k] += 1;
+    }
+  }
+  res.json({
+    days,
+    series: Object.entries(revenueByDay).map(([date, revenue]) => ({
+      date,
+      revenue: Number(revenue.toFixed(2)),
+      orderCount: countByDay[date],
+    })),
+  });
+}
+
+async function inventoryTrend(req, res) {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 7), 180);
+  const since = new Date(Date.now() - days * 86400000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const movements = await prisma.stockMovement.findMany({
+    where: { createdAt: { gte: since } },
+    select: { createdAt: true, qty: true, direction: true },
+  });
+  const inByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  const outByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  for (const m of movements) {
+    const k = dateKey(m.createdAt);
+    if (inByDay[k] == null) continue;
+    if (m.direction === 'IN') inByDay[k] += Math.abs(m.qty);
+    else if (m.direction === 'OUT') outByDay[k] += Math.abs(m.qty);
+  }
+  res.json({
+    days,
+    series: Object.keys(inByDay).map((date) => ({
+      date,
+      inQty: inByDay[date],
+      outQty: outByDay[date],
+      netQty: inByDay[date] - outByDay[date],
+    })),
+  });
+}
+
+async function alertsTrend(req, res) {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 7), 180);
+  const since = new Date(Date.now() - days * 86400000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const alerts = await prisma.alert.findMany({
+    where: { createdAt: { gte: since } },
+    select: { createdAt: true, severity: true },
+  });
+  const empty = buildEmptyDays(days);
+  const buckets = Object.fromEntries(empty.map((d) => [d.date, { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 }]));
+  for (const a of alerts) {
+    const k = dateKey(a.createdAt);
+    if (buckets[k]) buckets[k][a.severity] = (buckets[k][a.severity] || 0) + 1;
+  }
+  res.json({
+    days,
+    series: Object.entries(buckets).map(([date, sev]) => ({ date, ...sev, total: sev.CRITICAL + sev.HIGH + sev.MEDIUM + sev.LOW })),
+  });
+}
+
+module.exports = { summary, salesTrend, inventoryTrend, alertsTrend };

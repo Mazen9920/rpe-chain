@@ -25,6 +25,7 @@ export default function SalesOrderDetailPage() {
   const [showPick, setShowPick] = useState(false);
   const [showShip, setShowShip] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<Array<{ code: string; message: string }>>([]);
 
   const { data: so, isLoading } = useQuery({
     queryKey: ['sales-order', id],
@@ -41,7 +42,14 @@ export default function SalesOrderDetailPage() {
     const d = e.response?.data;
     setActionErr((d?.message || d?.error || 'Action failed') + (d?.details ? ` — ${JSON.stringify(d.details)}` : ''));
   };
-  const confirm = useMutation({ mutationFn: () => salesOrderService.confirm(id), onSuccess: invalidate, onError: handleErr });
+  const confirm = useMutation({
+    mutationFn: () => salesOrderService.confirm(id),
+    onSuccess: (data: { warnings?: Array<{ code: string; message: string }> }) => {
+      setWarnings(data?.warnings || []);
+      invalidate();
+    },
+    onError: handleErr,
+  });
   const allocate = useMutation({ mutationFn: () => salesOrderService.allocate(id), onSuccess: invalidate, onError: handleErr });
   const pack = useMutation({ mutationFn: () => salesOrderService.pack(id), onSuccess: invalidate, onError: handleErr });
   const cancel = useMutation({
@@ -100,6 +108,21 @@ export default function SalesOrderDetailPage() {
             <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
             <div className="flex-1 break-words">{actionErr}</div>
             <button onClick={() => setActionErr(null)} className="text-red-500 hover:text-red-700"><X size={14} /></button>
+          </div>
+        )}
+
+        {warnings.length > 0 && (
+          <div className="mt-4 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-lg">
+            <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold mb-0.5">Confirmed with warnings</div>
+              <ul className="list-disc list-inside space-y-0.5">
+                {warnings.map((w, i) => (
+                  <li key={i}><span className="font-mono text-xs">{w.code}</span> — {w.message}</li>
+                ))}
+              </ul>
+            </div>
+            <button onClick={() => setWarnings([])} className="text-amber-600 hover:text-amber-800"><X size={14} /></button>
           </div>
         )}
 

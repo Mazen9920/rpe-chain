@@ -693,6 +693,21 @@ async function recomputePerformance(supplierId, periodStart, periodEnd) {
   };
 }
 
+async function recomputeAllSupplierPerformance() {
+  const suppliers = await prisma.supplier.findMany({ where: { deletedAt: null }, select: { id: true } });
+  const results = { total: suppliers.length, recomputed: 0, skipped: 0, failed: 0 };
+  for (const s of suppliers) {
+    try {
+      const r = await recomputePerformance(s.id);
+      if (r.status === 'ok') results.recomputed += 1;
+      else results.skipped += 1;
+    } catch (e) {
+      results.failed += 1;
+    }
+  }
+  return results;
+}
+
 // ─── Categories ──────────────────────────────────────────────────────────────
 
 async function listCategories() {
@@ -828,6 +843,7 @@ module.exports = {
   listPerformance,
   upsertPerformance,
   recomputePerformance,
+  recomputeAllSupplierPerformance,
   computeOverallScore,
   // categories
   listCategories,

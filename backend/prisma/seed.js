@@ -668,6 +668,85 @@ async function main() {
     }
   }
 
+  // ── Section 7 demo data: alerts/forecasting/reporting ─────────────────────
+  {
+    const ts = Date.now();
+    const actor = { id: admin.id };
+
+    // 1) A bad supplier-performance row to trigger SUPPLIER_PERF alert (overall<0.7)
+    const badPerfExists = await prisma.supplierPerformance.findFirst({
+      where: { supplierId: supDraeger.id, source: 'MANUAL', notes: '[seed:s7] poor performance' },
+    });
+    if (!badPerfExists) {
+      await prisma.supplierPerformance.create({
+        data: {
+          supplierId: supDraeger.id,
+          periodStart: new Date(now - 90 * day),
+          periodEnd: new Date(now - 1 * day),
+          onTimeRate: 0.55,
+          fillRate: 0.62,
+          defectRate: 0.08,
+          leadTimeMean: 28.0,
+          source: 'MANUAL',
+          notes: '[seed:s7] poor performance',
+        },
+      });
+    }
+
+    // 2) A customer with a tight credit limit so confirming a small order warns.
+    const tightCust = await prisma.customer.upsert({
+      where: { code: 'CUST-TIGHT-004' },
+      update: { creditLimit: 500 },
+      create: {
+        code: 'CUST-TIGHT-004',
+        name: 'Tight Credit Co.',
+        email: 'ops@tightcredit.example',
+        currency: 'USD',
+        paymentTerms: 'NET_30',
+        billingAddress: 'Demo St, Dubai, UAE',
+        creditLimit: 500,
+      },
+    });
+
+    // 3) A pending sales order from the tight-credit customer (revenue > limit) — left RECEIVED so confirming triggers the warning UI.
+    const existingTightSo = await prisma.salesOrder.findFirst({ where: { customerId: tightCust.id } });
+    if (!existingTightSo) {
+      const n95 = await prisma.product.findUnique({ where: { sku: 'RPE-DSP-N95' } });
+      if (n95) {
+        const soSvc = require('../src/services/salesOrder.service');
+        await soSvc.createSalesOrder({
+          customerId: tightCust.id,
+          warehouseId: whDXB.id,
+          currency: 'USD',
+          notes: '[seed:s7] credit-limit warning demo',
+          lines: [{ productId: n95.id, qty: 30, unitPrice: 50 }],
+        }, actor, '127.0.0.1');
+      }
+    }
+
+    // 4) An extra overdue AP invoice past 60 days for richer aging buckets.
+    const apInvoice = require('../src/services/apInvoice.service');
+    const haveDeep = await prisma.supplierInvoice.findFirst({ where: { notes: '[seed:s7] deep-overdue' } });
+    if (!haveDeep) {
+      const inv = await apInvoice.createInvoice({
+        invoiceNumber: `AP-DEEP-${ts}`,
+        supplierId: supHoneywell.id,
+        currency: 'GBP',
+        invoiceDate: new Date(now - 100 * day).toISOString(),
+        notes: '[seed:s7] deep-overdue',
+        lines: [{ description: 'Old respirator stock', quantity: 5, unitPrice: 200 }],
+      }, actor, '127.0.0.1');
+      await apInvoice.submitForMatching(inv.id, actor, '127.0.0.1');
+      await apInvoice.approveInvoice(inv.id, {}, actor, '127.0.0.1');
+      await prisma.supplierInvoice.update({
+        where: { id: inv.id },
+        data: { dueDate: new Date(now - 75 * day) },
+      });
+    }
+
+    console.log('   Section 7: bad scorecard + tight-credit customer + extra overdue invoice seeded');
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Admin login: admin@rpechain.com / Admin@123');
   console.log('   Production login: production@rpechain.com / Prod@123');

@@ -21,6 +21,8 @@ import SalesOrderDetailPage from './pages/SalesOrderDetailPage';
 import AccountsPayablePage from './pages/AccountsPayablePage';
 import SupplierInvoiceDetailPage from './pages/SupplierInvoiceDetailPage';
 import PaymentDetailPage from './pages/PaymentDetailPage';
+import AlertsPage from './pages/AlertsPage';
+import ReportsPage from './pages/ReportsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -52,6 +54,8 @@ export default function App() {
               <Route path="/customers/:id" element={<CustomerDetailPage />} />
               <Route path="/sales-orders" element={<SalesOrdersPage />} />
               <Route path="/sales-orders/:id" element={<SalesOrderDetailPage />} />
+              <Route path="/alerts" element={<AlertsPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
