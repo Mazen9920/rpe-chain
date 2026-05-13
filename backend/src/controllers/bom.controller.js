@@ -151,9 +151,20 @@ const archive = wrap(async (req, res) => {
   if (!bom) return res.status(404).json({ error: 'BOM not found' });
   if (bom.archivedAt) return res.json(bom);
 
-  const updated = await prisma.billOfMaterials.update({
-    where: { id: bom.id },
-    data: { archivedAt: new Date(), isActive: false },
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.billOfMaterials.update({
+      where: { id: bom.id },
+      data: { archivedAt: new Date(), isActive: false },
+    });
+    // If no remaining active BOM for this product, clear isManufactured.
+    const stillActive = await tx.billOfMaterials.findFirst({
+      where: { productId: bom.productId, isActive: true, archivedAt: null },
+      select: { id: true },
+    });
+    if (!stillActive) {
+      await tx.product.update({ where: { id: bom.productId }, data: { isManufactured: false } });
+    }
+    return u;
   });
   await logEvent({ eventType: 'BOM_ARCHIVED', entityType: 'BillOfMaterials', entityId: bom.id, actorId: req.user?.id });
   res.json(updated);

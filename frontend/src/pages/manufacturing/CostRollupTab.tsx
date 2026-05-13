@@ -3,7 +3,7 @@
  */
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Calculator } from 'lucide-react';
+import { Calculator, Download } from 'lucide-react';
 import { bomService, productService, inventoryService } from '../../services';
 import type { Product, Warehouse } from '../../types/inventory';
 import type { CostRollupResponse, RollupNode } from '../../types/manufacturing';
@@ -11,6 +11,31 @@ import type { CostRollupResponse, RollupNode } from '../../types/manufacturing';
 function fmt(v: number | undefined) {
   if (v == null || isNaN(v)) return '—';
   return Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+type FlatRow = { depth: number; sku: string; name: string; qtyPer: number; unitCost: number; labor: number; overhead: number; lineCost: number };
+
+function flatten(node: RollupNode, depth: number, out: FlatRow[]) {
+  out.push({ depth, sku: node.sku, name: node.name, qtyPer: node.qtyPer, unitCost: node.unitCost, labor: node.labor, overhead: node.overhead, lineCost: node.lineCost });
+  for (const c of node.components) flatten(c, depth + 1, out);
+}
+
+function downloadCsv(data: CostRollupResponse) {
+  const rows: FlatRow[] = [];
+  flatten(data.tree, 0, rows);
+  const header = ['Depth', 'SKU', 'Name', 'Qty/Unit', 'Unit Cost', 'Labor', 'Overhead', 'Line Cost'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([r.depth, r.sku, `"${r.name.replace(/"/g, '""')}"`, r.qtyPer, r.unitCost, r.labor, r.overhead, r.lineCost].join(','));
+  }
+  lines.push(['', '', `"TOTAL UNIT COST"`, '', '', '', '', data.totalUnitCost].join(','));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cost-rollup-${data.tree.sku}-${data.mode}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function NodeRow({ node, depth }: { node: RollupNode; depth: number }) {
@@ -93,7 +118,10 @@ export default function CostRollupTab() {
           <>
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <div className="text-sm text-slate-500">Mode: <span className="font-semibold text-slate-700">{data.mode.toUpperCase()}</span>{data.warehouseId ? ` · Warehouse: ${warehouses.find((w) => w.id === data.warehouseId)?.code}` : ''}</div>
-              <div className="text-base font-bold text-slate-800">Total Unit Cost: {fmt(data.totalUnitCost)}</div>
+              <div className="flex items-center gap-3">
+                <div className="text-base font-bold text-slate-800">Total Unit Cost: {fmt(data.totalUnitCost)}</div>
+                <button onClick={() => downloadCsv(data)} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"><Download size={14} /> CSV</button>
+              </div>
             </div>
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">

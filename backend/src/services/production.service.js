@@ -292,7 +292,12 @@ async function postOutput({ orderId, qty, scrapQty = 0, lotNumber, expiryDate, u
   const labor = Number(order.product.standardLaborCost) * qty;
   const overhead = Number(order.product.standardOverheadCost) * qty;
   const totalCost = totalComponentCost + labor + overhead;
-  const unitCost = totalCost / qty;
+  // Net good units = qty - scrapQty. All production cost is capitalized into the
+  // good units (scrap absorbs no cost). This keeps Lot.qtyRemaining, CostLayer.qty,
+  // and the IN movement perfectly reconciled — no separate SCRAP posting needed.
+  const netQty = qty - scrapQty;
+  if (netQty <= 0) throw new Error('Output netQty (qty - scrapQty) must be positive');
+  const unitCost = totalCost / netQty;
 
   // Generate lot number if not given.
   const finalLotNumber = lotNumber || `LOT-${order.orderNumber}-${Date.now().toString(36).toUpperCase()}`;
@@ -304,8 +309,8 @@ async function postOutput({ orderId, qty, scrapQty = 0, lotNumber, expiryDate, u
         productId: order.productId,
         receivedDate: new Date(),
         expiryDate: expiryDate ? new Date(expiryDate) : null,
-        qtyReceived: qty,
-        qtyRemaining: qty,
+        qtyReceived: netQty,
+        qtyRemaining: netQty,
         qaStatus: 'RELEASED',
       },
     });
@@ -315,7 +320,7 @@ async function postOutput({ orderId, qty, scrapQty = 0, lotNumber, expiryDate, u
         productId: order.productId,
         warehouseId: order.warehouseId,
         lotId: lot.id,
-        qty,
+        qty: netQty,
         unitCost,
         landedCostPerUnit: 0,
         currency: 'USD',
@@ -329,7 +334,7 @@ async function postOutput({ orderId, qty, scrapQty = 0, lotNumber, expiryDate, u
       data: {
         productionOrderId: orderId,
         lotId: lot.id,
-        qty,
+        qty: netQty,
         totalComponentCost: totalComponentCost.toFixed(2),
         laborCost: labor.toFixed(2),
         overheadCost: overhead.toFixed(2),
@@ -340,38 +345,22 @@ async function postOutput({ orderId, qty, scrapQty = 0, lotNumber, expiryDate, u
     return { lot, output };
   });
 
-  // Record the physical IN movement.
+  // Record the physical IN movement for the net (good) units only.
   await recordMovement({
     productId: order.productId,
     warehouseId: order.warehouseId,
     lotId: result.lot.id,
-    qty,
+    qty: netQty,
     reasonCode: 'PRODUCTION_OUTPUT',
     sourceDocType: 'PRODUCTION_ORDER',
     sourceDocId: orderId,
     operatorId: userId,
   });
 
-  // Optional scrap movement on the finished good.
-  if (scrapQty > 0) {
-    // Scrap reduces stock — we recorded a smaller qty in IN; here we record OUT for scrap.
-    // To represent scrap that never made it to inventory, we'd skip the IN but then there'd be
-    // no traceable lot. Instead: post the full produced qty IN, then a SCRAP movement OUT.
-    await recordMovement({
-      productId: order.productId,
-      warehouseId: order.warehouseId,
-      lotId: result.lot.id,
-      qty: scrapQty,
-      reasonCode: 'SCRAP',
-      sourceDocType: 'PRODUCTION_ORDER',
-      sourceDocId: orderId,
-      operatorId: userId,
-    });
-    await prisma.lot.update({
-      where: { id: result.lot.id },
-      data: { qtyRemaining: { decrement: scrapQty } },
-    });
-  }
+  // Scrap is tracked on the order (scrapQty) and absorbed into unit cost of good
+  // units. No stock movement is posted because scrap units never entered inventory
+  // (Lot/CostLayer were created with netQty only). This keeps Lot.qtyRemaining
+  // and CostLayer.qtyRemaining perfectly reconciled.
 
   const updated = await prisma.productionOrder.update({
     where: { id: orderId },
@@ -389,7 +378,7 @@ async function postOutput({ orderId, qty, scrapQty = 0, lotNumber, expiryDate, u
     entityType: 'ProductionOrder',
     entityId: orderId,
     actorId: userId,
-    payload: { qty, scrapQty, unitCost: unitCost.toFixed(4), lotNumber: finalLotNumber },
+    payload: { qty, scrapQty, netQty, unitCost: unitCost.toFixed(4), lotNumber: finalLotNumber },
   });
 
   return { order: updated, output: result.output, lot: result.lot, unitCost };
