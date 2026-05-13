@@ -29,6 +29,10 @@ const salesOrderRoutes = require('./routes/salesOrder.routes');
 const alertsRoutes = require('./routes/alerts.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const eventsRoutes = require('./routes/events.routes');
+const webhookRoutes = require('./routes/webhook.routes');
+
+// Bootstrap outbox handlers (self-register on require)
+require('./services/integrations/email/handler');
 
 const app = express();
 
@@ -41,6 +45,11 @@ app.use(requestId);
 app.use(requestLogger);
 app.use(helmet());
 app.use(cors({ origin: '*' }));
+
+// Inbound webhooks MUST be mounted BEFORE express.json() so the raw body
+// remains available for HMAC verification (Shopify / Bosta).
+app.use('/api/webhooks', webhookRoutes);
+
 app.use(express.json());
 
 // Health endpoints (mounted before auth so probes are always reachable)

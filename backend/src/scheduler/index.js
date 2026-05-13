@@ -59,6 +59,24 @@ async function runDailyPass() {
   }
 }
 
+async function runOutboxPass() {
+  const prisma = require('../lib/prisma');
+  // Make sure email handler is registered (in case scheduler is started before app.js)
+  require('../services/integrations/email/handler');
+  const outbox = require('../services/outbox.service');
+  const startedAt = Date.now();
+  try {
+    const result = await outbox.processBatch({ limit: 50 });
+    if (result.claimed > 0) {
+      console.log(`[scheduler] outbox: ${JSON.stringify(result)} in ${Date.now() - startedAt}ms`);
+      await logEvent(prisma, 'SCHEDULER_OUTBOX_PASS', { result, durationMs: Date.now() - startedAt });
+    }
+  } catch (e) {
+    console.error('[scheduler] outbox pass failed:', e.message);
+    await logEvent(prisma, 'SCHEDULER_OUTBOX_PASS_FAILED', { error: e.message });
+  }
+}
+
 function start() {
   if (process.env.DISABLE_SCHEDULER === 'true') {
     console.log('[scheduler] disabled via DISABLE_SCHEDULER=true');
@@ -70,10 +88,13 @@ function start() {
   // Every 15 minutes — inventory alert scan (fast, idempotent)
   jobs.push(cron.schedule('*/15 * * * *', runInventoryAlertScan, { scheduled: true }));
 
+  // Every minute — outbox dispatcher (Shopify, Bosta, email)
+  jobs.push(cron.schedule('* * * * *', runOutboxPass, { scheduled: true }));
+
   // Daily 02:00 — full cross-module pass + forecasts + reorder
   jobs.push(cron.schedule('0 2 * * *', runDailyPass, { scheduled: true }));
 
-  console.log('[scheduler] armed — */15min inventory scan + daily 02:00 cross-module pass');
+  console.log('[scheduler] armed — */15min inventory scan + */1min outbox + daily 02:00 cross-module pass');
 
   if (process.env.RUN_DAILY_ON_BOOT === 'true') {
     console.log('[scheduler] RUN_DAILY_ON_BOOT=true → running one-shot daily pass now');
@@ -88,4 +109,4 @@ function stop() {
   console.log('[scheduler] stopped');
 }
 
-module.exports = { start, stop, runInventoryAlertScan, runDailyPass };
+module.exports = { start, stop, runInventoryAlertScan, runDailyPass, runOutboxPass };
