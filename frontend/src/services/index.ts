@@ -69,6 +69,7 @@ export const inventoryService = {
     api.get('/inventory/movements', { params }).then((r) => r.data),
   adjustStock: (data: object) => api.post('/inventory/adjustments', data).then((r) => r.data),
   moveBetweenBins: (data: object) => api.post('/inventory/bin-moves', data).then((r) => r.data),
+  lookup: (code: string) => api.get('/inventory/lookup', { params: { code } }).then((r) => r.data) as Promise<{ type: 'BIN' | 'PRODUCT' | 'LOT'; entity: Record<string, unknown> }>,
   transfers: () => api.get('/inventory/transfers').then((r) => r.data),
   createTransfer: (data: object) => api.post('/inventory/transfers', data).then((r) => r.data),
   shipTransfer: (id: string, data?: object) => api.post(`/inventory/transfers/${id}/ship`, data ?? {}).then((r) => r.data),

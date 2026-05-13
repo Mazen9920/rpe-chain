@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { inventoryService, productService } from '../../services';
 import type { BinLocation, BinStockLevel, Product } from '../../types/inventory';
+import BarcodeInput, { LookupResult } from '../../components/BarcodeInput';
 
 interface BinMoveModalProps {
   warehouseId: string;
@@ -74,6 +75,16 @@ export default function BinMoveModal({ warehouseId, fromBin, bins, onClose }: Bi
     mutation.mutate();
   };
 
+  const handleBarcode = (result: LookupResult) => {
+    if (result.type === 'BIN') {
+      // If scanning a destination bin (different from source)
+      const scannedId = result.entity.id as string;
+      if (scannedId !== fromBin.id) setToBinId(scannedId);
+    } else if (result.type === 'PRODUCT') {
+      setProductId(result.entity.id as string);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
@@ -89,6 +100,11 @@ export default function BinMoveModal({ warehouseId, fromBin, bins, onClose }: Bi
           </button>
         </div>
         <form onSubmit={submit} className="space-y-4 px-5 py-4 text-sm">
+          <label className="block">
+            <span className="mb-1 block font-medium text-slate-600">Quick Scan</span>
+            <BarcodeInput placeholder="Scan destination bin or product SKU…" onResolve={handleBarcode} />
+          </label>
+
           <label className="block">
             <span className="mb-1 block font-medium text-slate-600">Product</span>
             <select

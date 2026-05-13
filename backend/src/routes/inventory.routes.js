@@ -20,6 +20,7 @@ router.post('/bins', requireRole('ADMIN', 'WAREHOUSE'), ctrl.createBin);
 router.put('/bins/:id', requireRole('ADMIN', 'WAREHOUSE'), ctrl.updateBin);
 router.delete('/bins/:id', requireRole('ADMIN', 'WAREHOUSE'), ctrl.deactivateBin);
 
+router.get('/lookup', ctrl.lookupBarcode);
 router.get('/stock-levels', ctrl.listStockLevels);
 router.get('/bin-stock-levels', ctrl.listBinStock);
 

@@ -431,6 +431,40 @@ async function adjustStock(req, res) {
   }
 }
 
+async function lookupBarcode(req, res) {
+  const code = (req.query.code || '').trim();
+  if (!code) return res.status(400).json({ error: 'code query param is required' });
+
+  // 1. Bin barcode
+  const bin = await prisma.binLocation.findFirst({
+    where: { barcode: code, isActive: true },
+    include: {
+      warehouse: { select: { id: true, code: true, name: true } },
+      zone: { select: { id: true, code: true, name: true } },
+    },
+  });
+  if (bin) return res.json({ type: 'BIN', entity: bin });
+
+  // 2. Product SKU or GTIN
+  const product = await prisma.product.findFirst({
+    where: { OR: [{ sku: code }, { gtin: code }], isActive: true, deletedAt: null },
+    include: { category: { select: { id: true, name: true } } },
+  });
+  if (product) return res.json({ type: 'PRODUCT', entity: product });
+
+  // 3. Lot number
+  const lot = await prisma.lot.findFirst({
+    where: { lotNumber: code },
+    include: {
+      product: { select: { id: true, sku: true, name: true, uom: true } },
+      currentBin: { select: { id: true, code: true } },
+    },
+  });
+  if (lot) return res.json({ type: 'LOT', entity: lot });
+
+  return res.status(404).json({ error: `No bin, product, or lot matched "${code}"` });
+}
+
 async function moveBetweenBins(req, res) {
   const { productId, warehouseId, fromBinId, toBinId, lotId, qty, notes } = req.body;
   const numericQty = Number(qty);
@@ -781,6 +815,7 @@ module.exports = {
   listMovements,
   adjustStock,
   moveBetweenBins,
+  lookupBarcode,
   listTransfers,
   createTransfer,
   shipTransfer,
