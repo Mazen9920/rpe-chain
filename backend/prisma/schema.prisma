@@ -39,6 +39,11 @@ model User {
   postedCycleCounts  CycleCount[] @relation("CycleCountPostedBy")
   createdBoms        BillOfMaterials[]
   createdProductionOrders ProductionOrder[]
+  createdInvoices    SupplierInvoice[] @relation("InvoiceCreatedBy")
+  approvedInvoices   SupplierInvoice[] @relation("InvoiceApprovedBy")
+  voidedInvoices     SupplierInvoice[] @relation("InvoiceVoidedBy")
+  createdPayments    Payment[]         @relation("PaymentCreatedBy")
+  voidedPayments     Payment[]         @relation("PaymentVoidedBy")
 }
 
 enum Role {
@@ -658,6 +663,7 @@ model PurchaseOrderLine {
   product       Product       @relation(fields: [productId], references: [id])
 
   receiptLines GoodsReceiptLine[]
+  invoiceLines SupplierInvoiceLine[]
 
   @@index([purchaseOrderId, status])
 }
@@ -702,6 +708,7 @@ model GoodsReceiptLine {
   poLine        PurchaseOrderLine @relation(fields: [poLineId], references: [id])
   lot           Lot?              @relation("GoodsReceiptLineLot", fields: [lotId], references: [id])
   qaActionedBy  User?             @relation("GoodsReceiptLineQaBy", fields: [qaActionedById], references: [id])
+  invoiceLines  SupplierInvoiceLine[]
 
   @@index([receiptId])
   @@index([poLineId])
@@ -709,24 +716,100 @@ model GoodsReceiptLine {
 
 // ─── Accounts Payable ─────────────────────────────────────────────────────────
 
-model SupplierInvoice {
-  id              String   @id @default(uuid())
-  supplierId      String
-  purchaseOrderId String?
-  invoiceNumber   String
-  invoiceDate     DateTime
-  dueDate         DateTime
-  amount          Decimal  @db.Decimal(14, 2)
-  currency        String   @default("USD")
-  status          String   @default("OPEN") // OPEN | MATCHED | DISPUTED | PAID | CANCELLED
-  createdAt       DateTime @default(now())
+enum InvoiceStatus {
+  DRAFT
+  RECEIVED
+  MATCHED
+  EXCEPTION
+  APPROVED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
 
-  supplier      Supplier       @relation(fields: [supplierId], references: [id])
-  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  apEntries     ApLedgerEntry[]
+enum PaymentMethod {
+  BANK_TRANSFER
+  CHECK
+  CARD
+  OTHER
+}
+
+enum PaymentStatus {
+  POSTED
+  VOIDED
+}
+
+model SupplierInvoice {
+  id                  String        @id @default(uuid())
+  supplierId          String
+  purchaseOrderId     String?
+  invoiceNumber       String
+  invoiceType         String        @default("STANDARD") // STANDARD | CREDIT_NOTE | DEBIT_NOTE
+  invoiceDate         DateTime
+  dueDate             DateTime
+  subtotal            Decimal       @default(0) @db.Decimal(14, 2)
+  taxAmount           Decimal       @default(0) @db.Decimal(14, 2)
+  amount              Decimal       @db.Decimal(14, 2) // subtotal + taxAmount
+  matchedAmount       Decimal       @default(0) @db.Decimal(14, 2)
+  varianceAmount      Decimal       @default(0) @db.Decimal(14, 2)
+  paidAmount          Decimal       @default(0) @db.Decimal(14, 2)
+  currency            String        @default("USD")
+  fxRate              Decimal?      @db.Decimal(14, 6)
+  status              InvoiceStatus @default(DRAFT)
+  holdReason          String?
+  notes               String?
+  attachmentUrl       String?
+  creditedInvoiceId   String?
+  createdById         String?
+  approvedById        String?
+  voidedById          String?
+  voidReason          String?
+  receivedAt          DateTime?
+  matchedAt           DateTime?
+  approvedAt          DateTime?
+  paidAt              DateTime?
+  voidedAt            DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  supplier            Supplier              @relation(fields: [supplierId], references: [id])
+  purchaseOrder       PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id])
+  creditedInvoice     SupplierInvoice?      @relation("CreditNoteLink", fields: [creditedInvoiceId], references: [id])
+  creditNotes         SupplierInvoice[]     @relation("CreditNoteLink")
+  createdBy           User?                 @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  approvedBy          User?                 @relation("InvoiceApprovedBy", fields: [approvedById], references: [id])
+  voidedBy            User?                 @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
+  lines               SupplierInvoiceLine[]
+  apEntries           ApLedgerEntry[]
+  paymentApplications PaymentApplication[]
 
   @@unique([supplierId, invoiceNumber])
   @@index([dueDate, status])
+  @@index([supplierId, status])
+  @@index([invoiceDate])
+}
+
+model SupplierInvoiceLine {
+  id            String  @id @default(uuid())
+  invoiceId     String
+  poLineId      String?
+  grnLineId     String?
+  description   String
+  quantity      Decimal @db.Decimal(14, 4)
+  unitPrice     Decimal @db.Decimal(14, 4)
+  lineTotal     Decimal @db.Decimal(14, 2)
+  matchStatus   String  @default("PENDING") // PENDING | MATCHED | QTY_VARIANCE | PRICE_VARIANCE | NO_RECEIPT | NO_PO
+  qtyVariance   Decimal? @db.Decimal(14, 4)
+  priceVariance Decimal? @db.Decimal(14, 4)
+  createdAt     DateTime @default(now())
+
+  invoice SupplierInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  poLine  PurchaseOrderLine? @relation(fields: [poLineId], references: [id])
+  grnLine GoodsReceiptLine?  @relation(fields: [grnLineId], references: [id])
+
+  @@index([invoiceId])
+  @@index([poLineId])
+  @@index([grnLineId])
 }
 
 // Append-only AP ledger — every invoice and every payment is a line.
@@ -735,10 +818,11 @@ model ApLedgerEntry {
   supplierId   String
   invoiceId    String?
   paymentId    String?
+  entryType    String   @default("INVOICE_POSTED") // INVOICE_POSTED | PAYMENT_APPLIED | CREDIT_NOTE | INVOICE_VOIDED | PAYMENT_VOIDED
   amount       Decimal  @db.Decimal(14, 2) // positive = liability, negative = payment
-  balance      Decimal  @db.Decimal(14, 2) // running balance for the supplier after this entry
+  balance      Decimal  @db.Decimal(14, 2) // running balance snapshot (advisory)
   dueDate      DateTime?
-  agingBucket  String?  // CURRENT | 1_30 | 31_60 | 61_90 | OVER_90
+  agingBucket  String?  // advisory snapshot — authoritative aging is computed on read
   description  String?
   createdAt    DateTime @default(now())
 
@@ -750,18 +834,45 @@ model ApLedgerEntry {
 }
 
 model Payment {
-  id            String   @id @default(uuid())
+  id            String        @id @default(uuid())
   supplierId    String
-  amount        Decimal  @db.Decimal(14, 2)
-  currency      String   @default("USD")
-  paymentDate   DateTime @default(now())
-  method        String   // BANK_TRANSFER | CHECK | CARD | OTHER
+  amount        Decimal       @db.Decimal(14, 2)
+  currency      String        @default("USD")
+  fxRate        Decimal?      @db.Decimal(14, 6)
+  paymentDate   DateTime      @default(now())
+  method        PaymentMethod
+  status        PaymentStatus @default(POSTED)
   reference     String?
   notes         String?
+  createdById   String?
+  voidedById    String?
+  voidedAt      DateTime?
+  voidReason    String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  supplier     Supplier              @relation(fields: [supplierId], references: [id])
+  createdBy    User?                 @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  voidedBy     User?                 @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
+  applications PaymentApplication[]
+  apEntries    ApLedgerEntry[]
+
+  @@index([supplierId, paymentDate])
+  @@index([status])
+}
+
+model PaymentApplication {
+  id            String   @id @default(uuid())
+  paymentId     String
+  invoiceId     String
+  amountApplied Decimal  @db.Decimal(14, 2)
   createdAt     DateTime @default(now())
 
-  supplier  Supplier        @relation(fields: [supplierId], references: [id])
-  apEntries ApLedgerEntry[]
+  payment Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice SupplierInvoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
 }
 
 // ─── Sales & Fulfillment ──────────────────────────────────────────────────────

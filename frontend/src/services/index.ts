@@ -247,3 +247,93 @@ export const productionService = {
   cancel: (id: string, reason?: string) =>
     api.post(`/production-orders/${id}/cancel`, { reason }).then((r) => r.data),
 };
+
+import type {
+  SupplierInvoice,
+  Payment,
+  InvoiceKpis,
+  AgingRow,
+  AgingSummary,
+  SupplierStatement,
+  InvoiceType,
+  InvoiceStatus,
+  PaymentMethod,
+} from '../types/ap';
+
+export interface InvoiceListParams {
+  supplierId?: string;
+  status?: InvoiceStatus;
+  invoiceType?: InvoiceType;
+  purchaseOrderId?: string;
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const apInvoiceService = {
+  list: (params?: InvoiceListParams) =>
+    api.get<{ rows: SupplierInvoice[]; total: number }>('/ap/invoices', { params }).then((r) => r.data),
+  kpis: () => api.get<InvoiceKpis>('/ap/invoices/kpis').then((r) => r.data),
+  getById: (id: string) => api.get<SupplierInvoice>(`/ap/invoices/${id}`).then((r) => r.data),
+  create: (data: Partial<SupplierInvoice> & { lines: Array<{ poLineId?: string; grnLineId?: string; description?: string; quantity: number; unitPrice: number }> }) =>
+    api.post<SupplierInvoice>('/ap/invoices', data).then((r) => r.data),
+  submit: (id: string) => api.post<SupplierInvoice>(`/ap/invoices/${id}/submit`).then((r) => r.data),
+  rematch: (id: string) => api.post<SupplierInvoice>(`/ap/invoices/${id}/rematch`).then((r) => r.data),
+  approve: (id: string, overrideReason?: string) =>
+    api.post<SupplierInvoice>(`/ap/invoices/${id}/approve`, { overrideReason }).then((r) => r.data),
+  void: (id: string, reason: string) =>
+    api.post<SupplierInvoice>(`/ap/invoices/${id}/void`, { reason }).then((r) => r.data),
+};
+
+export interface PaymentListParams {
+  supplierId?: string;
+  method?: PaymentMethod;
+  status?: string;
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const paymentService = {
+  list: (params?: PaymentListParams) =>
+    api.get<{ rows: Payment[]; total: number }>('/ap/payments', { params }).then((r) => r.data),
+  getById: (id: string) => api.get<Payment>(`/ap/payments/${id}`).then((r) => r.data),
+  create: (data: {
+    supplierId: string;
+    amount: number;
+    currency?: string;
+    fxRate?: number;
+    paymentDate?: string;
+    method: PaymentMethod;
+    reference?: string;
+    notes?: string;
+    applications: Array<{ invoiceId: string; amountApplied: number }>;
+  }) => api.post<Payment>('/ap/payments', data).then((r) => r.data),
+  void: (id: string, reason: string) =>
+    api.post<Payment>(`/ap/payments/${id}/void`, { reason }).then((r) => r.data),
+};
+
+export const apAgingService = {
+  aging: (params?: { supplierId?: string; asOf?: string }) =>
+    api.get<{ asOf: string; rows: AgingRow[] }>('/ap/aging', { params }).then((r) => r.data),
+  summary: (params?: { supplierId?: string; asOf?: string }) =>
+    api.get<AgingSummary>('/ap/aging/summary', { params }).then((r) => r.data),
+  statement: (supplierId: string, asOf?: string) =>
+    api.get<SupplierStatement>(`/ap/aging/statement/${supplierId}`, { params: { asOf } }).then((r) => r.data),
+};
+
+export const creditNoteService = {
+  list: (params?: InvoiceListParams) =>
+    api.get<{ rows: SupplierInvoice[]; total: number }>('/ap/credit-notes', { params }).then((r) => r.data),
+  create: (data: {
+    creditedInvoiceId: string;
+    invoiceNumber: string;
+    invoiceDate?: string;
+    currency?: string;
+    notes?: string;
+    lines: Array<{ description?: string; quantity: number; unitPrice: number; poLineId?: string; grnLineId?: string }>;
+  }) => api.post<SupplierInvoice>('/ap/credit-notes', data).then((r) => r.data),
+};

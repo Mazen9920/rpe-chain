@@ -13,6 +13,9 @@ import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage';
 import GoodsReceiptsPage from './pages/GoodsReceiptsPage';
 import GoodsReceiptDetailPage from './pages/GoodsReceiptDetailPage';
 import ShipmentsPage from './pages/ShipmentsPage';
+import AccountsPayablePage from './pages/AccountsPayablePage';
+import SupplierInvoiceDetailPage from './pages/SupplierInvoiceDetailPage';
+import PaymentDetailPage from './pages/PaymentDetailPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -35,6 +38,9 @@ export default function App() {
               <Route path="/orders/:id" element={<PurchaseOrderDetailPage />} />
               <Route path="/goods-receipts" element={<GoodsReceiptsPage />} />
               <Route path="/goods-receipts/:id" element={<GoodsReceiptDetailPage />} />
+              <Route path="/ap" element={<AccountsPayablePage />} />
+              <Route path="/ap/invoices/:id" element={<SupplierInvoiceDetailPage />} />
+              <Route path="/ap/payments/:id" element={<PaymentDetailPage />} />
               <Route path="/shipments" element={<ShipmentsPage />} />
             </Route>
           </Route>

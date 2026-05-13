@@ -476,6 +476,97 @@ async function main() {
     console.log('   Procurement: 5 demo POs created');
   }
 
+  // ── Accounts Payable demo (Section 5) ─────────────────────────────────────
+  const existingInv = await prisma.supplierInvoice.count();
+  if (existingInv === 0) {
+    const apInvoice = require('../src/services/apInvoice.service');
+    const paymentSvc = require('../src/services/payment.service');
+    const creditNote = require('../src/services/creditNote.service');
+    const actor = { id: admin.id };
+    const ts = Date.now();
+
+    // 1) Fully paid invoice (3M, USD 1000) — non-PO, will auto-MATCH on submit.
+    const inv1 = await apInvoice.createInvoice({
+      invoiceNumber: `AP-PAID-${ts}`,
+      supplierId: sup3M.id,
+      currency: 'USD',
+      invoiceDate: new Date(now - 40 * day).toISOString(),
+      notes: '[seed:ap] Fully paid demo',
+      lines: [{ description: 'Bulk filters', quantity: 100, unitPrice: 10 }],
+    }, actor, '127.0.0.1');
+    await apInvoice.submitForMatching(inv1.id, actor, '127.0.0.1');
+    await apInvoice.approveInvoice(inv1.id, {}, actor, '127.0.0.1');
+    await paymentSvc.recordPayment({
+      supplierId: sup3M.id,
+      amount: 1000,
+      currency: 'USD',
+      paymentDate: new Date(now - 5 * day).toISOString(),
+      method: 'BANK_TRANSFER',
+      reference: `WIRE-${ts}`,
+      applications: [{ invoiceId: inv1.id, amountApplied: 1000 }],
+    }, actor, '127.0.0.1');
+
+    // 2) Partially paid invoice (Honeywell, GBP 2000 → 500 paid).
+    const inv2 = await apInvoice.createInvoice({
+      invoiceNumber: `AP-PART-${ts}`,
+      supplierId: supHoneywell.id,
+      currency: 'GBP',
+      invoiceDate: new Date(now - 25 * day).toISOString(),
+      notes: '[seed:ap] Partially paid demo',
+      lines: [{ description: 'Full-face respirator units', quantity: 10, unitPrice: 200 }],
+    }, actor, '127.0.0.1');
+    await apInvoice.submitForMatching(inv2.id, actor, '127.0.0.1');
+    await apInvoice.approveInvoice(inv2.id, {}, actor, '127.0.0.1');
+    await paymentSvc.recordPayment({
+      supplierId: supHoneywell.id,
+      amount: 500,
+      currency: 'GBP',
+      paymentDate: new Date(now - 3 * day).toISOString(),
+      method: 'BANK_TRANSFER',
+      reference: `WIRE-PART-${ts}`,
+      applications: [{ invoiceId: inv2.id, amountApplied: 500 }],
+    }, actor, '127.0.0.1');
+
+    // 3) Approved, unpaid, overdue (Moldex, USD 750) — for aging demo.
+    const inv3 = await apInvoice.createInvoice({
+      invoiceNumber: `AP-OVERDUE-${ts}`,
+      supplierId: supMoldex.id,
+      currency: 'USD',
+      invoiceDate: new Date(now - 75 * day).toISOString(),
+      notes: '[seed:ap] Overdue aging demo',
+      lines: [{ description: 'N95 boxes', quantity: 25, unitPrice: 30 }],
+    }, actor, '127.0.0.1');
+    await apInvoice.submitForMatching(inv3.id, actor, '127.0.0.1');
+    await apInvoice.approveInvoice(inv3.id, {}, actor, '127.0.0.1');
+    // Backdate dueDate so it lands in 31_60 bucket
+    await prisma.supplierInvoice.update({
+      where: { id: inv3.id },
+      data: { dueDate: new Date(now - 45 * day) },
+    });
+
+    // 4) Draft invoice (Dräger, EUR) — sits in queue.
+    await apInvoice.createInvoice({
+      invoiceNumber: `AP-DRAFT-${ts}`,
+      supplierId: supDraeger.id,
+      currency: 'EUR',
+      fxRate: 1.08,
+      invoiceDate: new Date(now - 2 * day).toISOString(),
+      notes: '[seed:ap] Draft awaiting submission',
+      lines: [{ description: 'Cartridge replacements', quantity: 30, unitPrice: 25 }],
+    }, actor, '127.0.0.1');
+
+    // 5) Credit note against invoice #1 (refund 50).
+    await creditNote.createCreditNote({
+      invoiceNumber: `CN-${ts}`,
+      creditedInvoiceId: inv1.id,
+      invoiceDate: new Date(now - 1 * day).toISOString(),
+      notes: '[seed:ap] Refund credit note',
+      lines: [{ description: 'Quality refund', quantity: 1, unitPrice: 50 }],
+    }, actor, '127.0.0.1');
+
+    console.log('   AP: 4 invoices + 1 credit note + 2 payments created');
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Admin login: admin@rpechain.com / Admin@123');
   console.log('   Production login: production@rpechain.com / Prod@123');
