@@ -14,6 +14,7 @@ const AUDIENCE = {
   SUPPLIER_PERF: ['PROCUREMENT', 'ADMIN'],
   SHIPMENT_DELAY: ['WAREHOUSE', 'SALES', 'ADMIN'],
   CREDIT_LIMIT: ['SALES', 'FINANCE', 'ADMIN'],
+  CERTIFICATION_EXPIRY: ['PROCUREMENT', 'WAREHOUSE', 'ADMIN'],
 };
 
 // Carrier SLA (days from dispatch to expected delivery) — used when estimatedArrival missing.
@@ -48,7 +49,16 @@ async function upsertAlert(stillActive, openByKey, alert) {
     }
     return;
   }
-  await prisma.alert.create({ data: { ...data, status: 'OPEN' } });
+  const created = await prisma.alert.create({ data: { ...data, status: 'OPEN' } });
+
+  // Fan out to subscribed users via outbox. Failure must not block alert creation.
+  try {
+    const notifications = require('./notifications.service');
+    await notifications.dispatchAlertEmail(created);
+  } catch (e) {
+    // Use console here — logger import path may differ across older callers.
+    console.error('[alerts] notifications dispatch failed:', e.message);
+  }
 }
 
 async function loadOpenAlertsForTypes(types) {
@@ -392,12 +402,14 @@ async function scanCreditLimitAlerts() {
 
 // ─── Master scan ─────────────────────────────────────────────────────────────
 async function runAllScans({ actorId = null, sourceIp = null } = {}) {
+  const compliance = require('./compliance.service');
   const summary = {
     inventory: await scanInventoryAlerts(),
     ap: await scanApAlerts(),
     supplierPerf: await scanSupplierPerfAlerts(),
     shipmentDelay: await scanShipmentDelayAlerts(),
     creditLimit: await scanCreditLimitAlerts(),
+    certificationExpiry: await compliance.scanCertificationExpiryAlerts(),
   };
   await logEvent({ eventType: 'ALERTS_SCANNED', entityType: 'Alert', entityId: 'all', actorId, payload: summary, sourceIp });
   return summary;
@@ -487,6 +499,9 @@ async function resolveAlert(id, actorId) {
 module.exports = {
   AUDIENCE,
   CARRIER_SLA_DAYS,
+  loadOpenAlertsForTypes,
+  upsertAlert,
+  autoResolveStale,
   scanInventoryAlerts,
   scanApAlerts,
   scanSupplierPerfAlerts,

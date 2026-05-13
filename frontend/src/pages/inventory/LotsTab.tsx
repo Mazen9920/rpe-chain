@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { ShieldCheck } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ShieldCheck, AlertOctagon } from 'lucide-react';
 import { inventoryService } from '../../services';
 import type { Lot } from '../../types/inventory';
 import LotQaModal from './LotQaModal';
@@ -29,7 +29,19 @@ const QA_BADGE: Record<string, string> = {
 
 export default function LotsTab() {
   const [selectedLot, setSelectedLot] = useState<Lot | null>(null);
+  const [recallLot, setRecallLot] = useState<Lot | null>(null);
+  const [recallReason, setRecallReason] = useState('');
+  const [recallResult, setRecallResult] = useState<{ affectedSalesOrders: number } | null>(null);
   const [search, setSearch] = useState('');
+  const qc = useQueryClient();
+
+  const recallMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => inventoryService.recallLot(id, reason),
+    onSuccess: (data) => {
+      setRecallResult({ affectedSalesOrders: data.affectedSalesOrders });
+      qc.invalidateQueries({ queryKey: ['inventory', 'lots'] });
+    },
+  });
 
   const { data: lots = [], isLoading, isError } = useQuery<Lot[]>({
     queryKey: ['inventory', 'lots'],
@@ -112,12 +124,22 @@ export default function LotsTab() {
                       </td>
                       <td className="px-5 py-3">{expiryBadge(lot.expiryDate)}</td>
                       <td className="px-5 py-3">
-                        <button
-                          onClick={() => setSelectedLot(lot)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                        >
-                          <ShieldCheck size={13} />QA Action
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setSelectedLot(lot)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                          >
+                            <ShieldCheck size={13} />QA Action
+                          </button>
+                          {lot.qaStatus !== 'QUARANTINED' && lot.qtyRemaining > 0 ? (
+                            <button
+                              onClick={() => { setRecallLot(lot); setRecallReason(''); setRecallResult(null); }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                            >
+                              <AlertOctagon size={13} />Recall
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -128,6 +150,57 @@ export default function LotsTab() {
       </div>
 
       {selectedLot ? <LotQaModal lot={selectedLot} onClose={() => setSelectedLot(null)} /> : null}
+
+      {recallLot ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
+              <AlertOctagon size={18} className="text-red-600" />
+              <h3 className="font-semibold text-slate-800">Recall lot {recallLot.lotNumber}</h3>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-sm">
+              {recallResult ? (
+                <div className="rounded-lg bg-green-50 px-3 py-2 text-green-700">
+                  Lot quarantined. {recallResult.affectedSalesOrders} sales order(s) impacted. A CRITICAL alert was emitted.
+                </div>
+              ) : (
+                <>
+                  <p className="text-slate-600">
+                    This will mark the lot as <strong>QUARANTINED</strong>, log a <code>LOT_RECALLED</code> audit event,
+                    and create a CRITICAL alert that fans out to subscribers.
+                  </p>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Reason (required)</label>
+                    <textarea
+                      value={recallReason}
+                      onChange={(e) => setRecallReason(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-500"
+                      placeholder="Failed integrity test, supplier notification, etc."
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+              {recallResult ? (
+                <button onClick={() => { setRecallLot(null); setRecallResult(null); }} className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900">Close</button>
+              ) : (
+                <>
+                  <button onClick={() => setRecallLot(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+                  <button
+                    disabled={!recallReason.trim() || recallMutation.isPending}
+                    onClick={() => recallMutation.mutate({ id: recallLot.id, reason: recallReason.trim() })}
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:bg-red-300"
+                  >
+                    {recallMutation.isPending ? 'Recalling…' : 'Confirm recall'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

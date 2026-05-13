@@ -3,6 +3,65 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.2.0] — 2026-05-13 — Tier 2 integrations (Section 9)
+
+External-system connectivity sprint on top of v1.1.0. Adds the integration
+foundations (HMAC signing, outbox pattern, storage abstraction, mailer), a
+multi-channel notification layer, lot-recall compliance workflow, Shopify
+inbound order sync, and Bosta outbound shipment sync.
+
+### Added
+- **Phase A — Foundations**: durable Outbox model + worker
+  (`SKIP LOCKED` claim, exponential backoff `[1, 5, 30, 120, 720, 1440]` min,
+  `MAX_ATTEMPTS=6`, terminal `DEAD` state, unique `idempotencyKey`);
+  `registerHandler(target, fn)`, `enqueue(...)`, `processBatch()`. HMAC
+  webhook-signature middleware factory `verifyHmac({headerName, secretEnv,
+  algo, encoding})` that reads the raw body before `express.json()` and is
+  bypassed via `WEBHOOK_SIGNATURE_DISABLED=true` for local dev. Storage
+  abstraction (`STORAGE_DRIVER=s3|local`) with `putObject/getObject/
+  getSignedUrl/deleteObject`. Mailer pipeline (SendGrid → SMTP → noop).
+  Outbox scheduler tick every minute.
+- **Phase B — Notifications**: in-app + email notifications keyed off
+  `eventType`; user subscription preferences; daily digest at 07:00 UTC.
+  Email handler is an outbox target → idempotent retries.
+- **Phase C — Compliance**: lot-recall workflow with `LOT_RECALLED` audit
+  event, downstream `CRITICAL` alert emission, and automatic blocking of
+  recalled lots in fulfillment allocation.
+- **Phase D — Shopify**: inbound `orders/create` webhook (raw body + HMAC
+  via `X-Shopify-Hmac-Sha256`), idempotent mapper (`source=SHOPIFY`,
+  `externalId`), unknown-SKU skip with `SHOPIFY_ORDER_SKIPPED` audit,
+  outbound `inventory.set` + `fulfillment.create` outbox actions triggered
+  on `shipOrder`, registration script for webhooks, product-level external
+  ID mapping (Shopify modal in inventory), source filter on Sales Orders.
+- **Phase E — Bosta**: outbound `delivery.create` outbox action on
+  shipment creation when `carrier='BOSTA'`, label PDF stored under
+  `bosta-labels/<shipmentId>.pdf`, `GET /api/shipments/:id/label`
+  returning a 5-minute signed URL, Download Label button on the
+  shipment detail page. Inbound `POST /api/webhooks/bosta/tracking`
+  HMAC-verified, idempotent (uses `Shipment.lastTrackingEventId`),
+  persists `TrackingEvent` rows, maps Bosta state codes to
+  `ShipmentStatus`, propagates `DELIVERED` to `SalesOrder.deliveredAt`,
+  and auto-resolves open `SHIPMENT_DELAY` alerts on delivery.
+
+### Schema
+- `Outbox` model (target, action, payload, status, attempts, nextAttemptAt,
+  idempotencyKey).
+- `SalesOrder.source` + `SalesOrder.externalId` for inbound ingestion.
+- `Product.externalIds` (Json) for per-channel mappings.
+- `Shipment.labelKey` + `Shipment.lastTrackingEventId` for label storage
+  and idempotent tracking webhooks.
+- `TrackingEvent` model.
+- Notification + NotificationSubscription models.
+
+### Smoke tests (all green)
+- 7 core suites (inventory, manufacturing, suppliers, procurement,
+  ap-ledger, fulfillment, alerts-reporting, auth-hardening).
+- Section 9 suites: `test-foundations.sh`, `test-notifications.sh`,
+  `test-compliance.sh`, `test-shopify.sh`, `test-bosta.sh` (incl. HTTP
+  webhook path with `WEBHOOK_SIGNATURE_DISABLED=true`).
+- Frontend `npx tsc --noEmit` clean; production build succeeds.
+- `npx prisma validate` clean.
+
 ## [1.1.0] — 2026-05-13 — Tier 1 hardening (Section 8)
 
 Production-readiness sprint on top of v1.0.0. No new business features — pure

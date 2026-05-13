@@ -20,4 +20,14 @@ const voidShipment = wrap(async (req, res) => {
   res.json(await svc.voidShipment(req.params.id, req.body || {}, req.user, req.ip));
 });
 
-module.exports = { list, getById, deliver, void: voidShipment };
+const getLabel = wrap(async (req, res) => {
+  const prisma = require('../lib/prisma');
+  const storage = require('../lib/storage');
+  const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+  if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+  if (!shipment.labelKey) return res.status(404).json({ error: 'No label available for this shipment' });
+  const url = await storage.getSignedUrl(shipment.labelKey, 300);
+  res.json({ url, key: shipment.labelKey, expiresIn: 300 });
+});
+
+module.exports = { list, getById, deliver, void: voidShipment, getLabel };

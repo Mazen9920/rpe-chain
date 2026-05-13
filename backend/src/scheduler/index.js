@@ -46,6 +46,8 @@ async function runDailyPass() {
     summary.supplierPerfAlerts = await alerts.scanSupplierPerfAlerts();
     summary.shipmentDelayAlerts = await alerts.scanShipmentDelayAlerts();
     summary.creditLimitAlerts = await alerts.scanCreditLimitAlerts();
+    const compliance = require('../services/compliance.service');
+    summary.certificationExpiryAlerts = await compliance.scanCertificationExpiryAlerts();
 
     summary.supplierScorecards = await supplierSvc.recomputeAllSupplierPerformance().catch((e) => ({ error: e.message }));
     summary.forecasts = await forecast.generateForecasts().catch((e) => ({ error: e.message }));
@@ -56,6 +58,38 @@ async function runDailyPass() {
   } catch (e) {
     console.error('[scheduler] daily pass failed:', e.message);
     await logEvent(prisma, 'SCHEDULER_DAILY_PASS_FAILED', { error: e.message, summary });
+  }
+}
+
+async function runOutboxPass() {
+  const prisma = require('../lib/prisma');
+  // Make sure email handler is registered (in case scheduler is started before app.js)
+  require('../services/integrations/email/handler');
+  const outbox = require('../services/outbox.service');
+  const startedAt = Date.now();
+  try {
+    const result = await outbox.processBatch({ limit: 50 });
+    if (result.claimed > 0) {
+      console.log(`[scheduler] outbox: ${JSON.stringify(result)} in ${Date.now() - startedAt}ms`);
+      await logEvent(prisma, 'SCHEDULER_OUTBOX_PASS', { result, durationMs: Date.now() - startedAt });
+    }
+  } catch (e) {
+    console.error('[scheduler] outbox pass failed:', e.message);
+    await logEvent(prisma, 'SCHEDULER_OUTBOX_PASS_FAILED', { error: e.message });
+  }
+}
+
+async function runDailyDigest() {
+  const prisma = require('../lib/prisma');
+  const notifications = require('../services/notifications.service');
+  const startedAt = Date.now();
+  try {
+    const result = await notifications.sendDailyDigest();
+    console.log(`[scheduler] daily digest: ${JSON.stringify(result)} in ${Date.now() - startedAt}ms`);
+    await logEvent(prisma, 'SCHEDULER_DAILY_DIGEST', { result, durationMs: Date.now() - startedAt });
+  } catch (e) {
+    console.error('[scheduler] daily digest failed:', e.message);
+    await logEvent(prisma, 'SCHEDULER_DAILY_DIGEST_FAILED', { error: e.message });
   }
 }
 
@@ -70,10 +104,16 @@ function start() {
   // Every 15 minutes — inventory alert scan (fast, idempotent)
   jobs.push(cron.schedule('*/15 * * * *', runInventoryAlertScan, { scheduled: true }));
 
+  // Every minute — outbox dispatcher (Shopify, Bosta, email)
+  jobs.push(cron.schedule('* * * * *', runOutboxPass, { scheduled: true }));
+
   // Daily 02:00 — full cross-module pass + forecasts + reorder
   jobs.push(cron.schedule('0 2 * * *', runDailyPass, { scheduled: true }));
 
-  console.log('[scheduler] armed — */15min inventory scan + daily 02:00 cross-module pass');
+  // Daily 07:00 UTC — alert digest email
+  jobs.push(cron.schedule('0 7 * * *', runDailyDigest, { scheduled: true }));
+
+  console.log('[scheduler] armed — */15min inventory scan + */1min outbox + daily 02:00 cross-module pass + 07:00 digest');
 
   if (process.env.RUN_DAILY_ON_BOOT === 'true') {
     console.log('[scheduler] RUN_DAILY_ON_BOOT=true → running one-shot daily pass now');
@@ -88,4 +128,4 @@ function stop() {
   console.log('[scheduler] stopped');
 }
 
-module.exports = { start, stop, runInventoryAlertScan, runDailyPass };
+module.exports = { start, stop, runInventoryAlertScan, runDailyPass, runOutboxPass, runDailyDigest };

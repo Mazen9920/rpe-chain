@@ -151,6 +151,8 @@ export const shipmentService = {
     api.post(`/shipments/${id}/deliver`, data ?? {}).then((r) => r.data),
   void: (id: string, reason: string) =>
     api.post(`/shipments/${id}/void`, { reason }).then((r) => r.data),
+  getLabel: (id: string): Promise<{ url: string; key: string; expiresIn: number }> =>
+    api.get(`/shipments/${id}/label`).then((r) => r.data),
 };
 
 // ── Section 6 — Fulfillment ──────────────────────────────────────────────
@@ -188,7 +190,7 @@ export const customerService = {
 };
 
 export const salesOrderService = {
-  list: (params?: { search?: string; status?: string; customerId?: string; warehouseId?: string; limit?: number; offset?: number }) =>
+  list: (params?: { search?: string; status?: string; customerId?: string; warehouseId?: string; source?: string; limit?: number; offset?: number }) =>
     api.get<SOListResponse>('/sales-orders', { params }).then((r) => r.data),
   kpis: () => api.get<SOKpis>('/sales-orders/kpis').then((r) => r.data),
   getById: (id: string) => api.get<SalesOrder>(`/sales-orders/${id}`).then((r) => r.data),
@@ -233,6 +235,8 @@ export const inventoryService = {
     api.get('/inventory/lots', { params }).then((r) => r.data),
   updateLotQaStatus: (id: string, data: object) =>
     api.put(`/inventory/lots/${id}/qa-status`, data).then((r) => r.data),
+  recallLot: (id: string, reason: string) =>
+    api.post(`/inventory/lots/${id}/recall`, { reason }).then((r) => r.data),
   valuation: (params?: { warehouseId?: string; productId?: string }) =>
     api.get('/inventory/valuation', { params }).then((r) => r.data),
   movements: (params?: { productId?: string; limit?: number }) =>
@@ -288,6 +292,25 @@ export const alertsService = {
   snooze: (id: string, snoozedUntil: string) => api.post(`/alerts/${id}/snooze`, { snoozedUntil }).then((r) => r.data),
   resolve: (id: string) => api.post(`/alerts/${id}/resolve`).then((r) => r.data),
   scan: () => api.post('/alerts/scan').then((r) => r.data),
+};
+
+export type NotificationSubscription = {
+  id: string;
+  userId: string;
+  alertType: string | null;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | null;
+  channel: 'EMAIL' | 'SMS' | 'SLACK';
+  isActive: boolean;
+};
+
+export const notificationsService = {
+  listSubscriptions: () =>
+    api.get<NotificationSubscription[]>('/notifications/subscriptions').then((r) => r.data),
+  replaceSubscriptions: (items: Array<Partial<NotificationSubscription>>) =>
+    api.put<NotificationSubscription[]>('/notifications/subscriptions', items).then((r) => r.data),
+  seedAdminDefaults: () =>
+    api.post('/notifications/subscriptions/seed-admin-defaults').then((r) => r.data),
+  runDigest: () => api.post('/notifications/digest/run').then((r) => r.data),
 };
 
 export const reportsService = {

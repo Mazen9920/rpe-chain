@@ -32,6 +32,7 @@ model User {
   deletedAt DateTime?
 
   refreshTokens      RefreshToken[]
+  alertSubscriptions AlertSubscription[]
   purchaseOrders     PurchaseOrder[] @relation("CreatedBy")
   approvedPOs        PurchaseOrder[] @relation("ApprovedBy")
   requestedPOs       PurchaseOrder[] @relation("RequestedBy")
@@ -112,7 +113,8 @@ model Product {
   gtin           String?
   weightKg       Decimal? @db.Decimal(10, 3)
   hsCode         String?
-  certifications Json?    // [{ type: "NIOSH" | "EN149" | "CE", number, issuedAt, expiresAt }]
+  certifications Json?    // [{ id, type: "NIOSH" | "EN149" | "EN14683" | "CE", number, issuedAt, expiresAt, documentKey? }]
+  externalIds    Json?    // { shopify?: { variantId, inventoryItemId, locationId } }
   abcClass       String?  // A | B | C
   xyzClass       String?  // X | Y | Z
   reorderPoint   Int      @default(10)
@@ -1040,6 +1042,8 @@ model Shipment {
   voidedAt         DateTime?
   voidReason       String?
   notes            String?
+  labelKey         String?        // Storage key for the carrier label PDF (Bosta etc.)
+  lastTrackingEventId String?     // Last carrier-provided event id, for idempotent webhook updates
   createdById      String
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -1307,4 +1311,42 @@ model ProductionConsumptionLot {
 
   @@index([productionOrderId])
   @@index([lotId])
+}
+
+// ─── Section 9 — Integrations & Notifications ────────────────────────────────
+
+// At-least-once outbound delivery queue (Shopify, Bosta, email).
+model IntegrationOutbox {
+  id              String   @id @default(uuid())
+  target          String   // "shopify" | "bosta" | "email"
+  action          String   // e.g. "fulfillments.create", "inventory_levels.set", "single-alert"
+  payload         Json
+  status          String   @default("PENDING") // PENDING | SENT | FAILED | DEAD
+  attempts        Int      @default(0)
+  nextAttemptAt   DateTime @default(now())
+  lastError       String?
+  sentAt          DateTime?
+  idempotencyKey  String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([target, status])
+}
+
+// Per-user subscription filter for outbound notifications.
+model AlertSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  alertType String?  // null = all types
+  severity  String?  // null = all severities (LOW|MEDIUM|HIGH|CRITICAL)
+  channel   String   @default("EMAIL") // EMAIL | SMS | SLACK (only EMAIL for v1)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([alertType, severity, isActive])
 }
