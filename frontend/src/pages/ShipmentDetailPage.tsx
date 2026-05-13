@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ArrowLeft, CheckCircle, Ban } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Ban, Download } from 'lucide-react';
 import { shipmentService } from '../services';
 import type { Shipment } from '../types/fulfillment';
 import { useAuthStore } from '../stores/authStore';
@@ -81,6 +81,22 @@ export default function ShipmentDetailPage() {
           {canVoid && (
             <button onClick={() => { const r = prompt('Reason for voiding shipment?'); if (r) { setErr(null); voidMut.mutate(r); } }} disabled={voidMut.isPending} className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white text-sm rounded-lg font-medium">
               <Ban size={14} /> Void Shipment
+            </button>
+          )}
+          {s.labelKey && (
+            <button
+              onClick={async () => {
+                setErr(null);
+                try {
+                  const { url } = await shipmentService.getLabel(s.id);
+                  window.open(url, '_blank', 'noopener');
+                } catch (e) {
+                  handleErr(e as { response?: { data?: { message?: string; error?: string } } });
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm rounded-lg font-medium"
+            >
+              <Download size={14} /> Download Label
             </button>
           )}
         </div>

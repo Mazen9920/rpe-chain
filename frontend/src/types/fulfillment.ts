@@ -126,6 +126,8 @@ export interface Shipment {
   voidedAt?: string | null;
   voidReason?: string | null;
   notes?: string | null;
+  labelKey?: string | null;
+  lastTrackingEventId?: string | null;
   createdById: string;
   createdAt: string;
   updatedAt: string;

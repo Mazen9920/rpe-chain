@@ -1,0 +1,8 @@
+{
+  "_id": "bosta-delivery-test-001",
+  "trackingNumber": "BOSTA-TRK-9001",
+  "businessReference": "SHIP-BOSTA-TEST",
+  "state": { "code": 45, "value": "Delivered" },
+  "updatedAt": "2025-01-15T10:00:00.000Z",
+  "location": "Cairo Hub"
+}

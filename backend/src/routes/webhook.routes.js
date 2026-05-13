@@ -35,4 +35,30 @@ router.post(
   }
 );
 
+// ─── Bosta ───────────────────────────────────────────────────────────────────
+const bostaVerify = verifyHmac({
+  headerName: 'X-Bosta-Signature',
+  secretEnv: 'BOSTA_WEBHOOK_SECRET',
+  algo: 'sha256',
+  encoding: 'hex',
+});
+
+router.post(
+  '/bosta/tracking',
+  express.raw({ type: '*/*', limit: '2mb' }),
+  bostaVerify,
+  async (req, res) => {
+    try {
+      const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
+      const payload = raw ? JSON.parse(raw) : {};
+      const handler = require('../services/integrations/bosta/handler');
+      const result = await handler.ingestTrackingEvent(payload);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      logger.error({ err: e.message }, 'bosta tracking failed');
+      res.status(e.status || 500).json({ ok: false, error: e.message });
+    }
+  }
+);
+
 module.exports = router;

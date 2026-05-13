@@ -151,6 +151,8 @@ export const shipmentService = {
     api.post(`/shipments/${id}/deliver`, data ?? {}).then((r) => r.data),
   void: (id: string, reason: string) =>
     api.post(`/shipments/${id}/void`, { reason }).then((r) => r.data),
+  getLabel: (id: string): Promise<{ url: string; key: string; expiresIn: number }> =>
+    api.get(`/shipments/${id}/label`).then((r) => r.data),
 };
 
 // ── Section 6 — Fulfillment ──────────────────────────────────────────────

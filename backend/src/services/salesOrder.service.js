@@ -592,6 +592,21 @@ async function shipOrder(id, data, actor, sourceIp) {
     require('../lib/logger').warn({ err: e.message }, 'shopify enqueue from SO ship failed');
   }
 
+  // Bosta carrier outbound: enqueue delivery.create if carrier is BOSTA.
+  try {
+    if (result.shipment.carrier === 'BOSTA') {
+      const outbox = require('./outbox.service');
+      await outbox.enqueue({
+        target: 'bosta',
+        action: 'delivery.create',
+        payload: { shipmentId: result.shipment.id },
+        idempotencyKey: `bosta:create:${result.shipment.id}`,
+      });
+    }
+  } catch (e) {
+    require('../lib/logger').warn({ err: e.message }, 'bosta enqueue from SO ship failed');
+  }
+
   return getSalesOrderById(so.id);
 }
 

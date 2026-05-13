@@ -35,6 +35,7 @@ const notificationsRoutes = require('./routes/notifications.routes');
 // Bootstrap outbox handlers (self-register on require)
 require('./services/integrations/email/handler');
 require('./services/integrations/shopify/handler');
+require('./services/integrations/bosta/handler');
 
 const app = express();
 
