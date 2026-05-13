@@ -794,6 +794,46 @@ async function postCycleCount(req, res) {
   res.json(result);
 }
 
+async function getReorderRecommendations(req, res) {
+  // Find all StockLevel rows where onHand <= product.reorderPoint
+  // Join to product to get reorderPoint, reorderQty, sku, name, and preferred supplier
+  const rows = await prisma.stockLevel.findMany({
+    include: {
+      product: {
+        include: {
+          supplierProducts: {
+            where: { isPreferred: true },
+            take: 1,
+            include: { supplier: { select: { id: true, code: true, name: true } } },
+          },
+          category: { select: { id: true, name: true } },
+        },
+      },
+      warehouse: { select: { id: true, code: true, name: true, country: true, currency: true } },
+    },
+    orderBy: [{ onHand: 'asc' }],
+  });
+
+  // Filter to only those at or below reorder point
+  const recommendations = rows.filter((row) => {
+    const rp = row.product?.reorderPoint;
+    return rp !== null && rp !== undefined && row.onHand <= rp;
+  }).map((row) => ({
+    productId: row.productId,
+    warehouseId: row.warehouseId,
+    product: row.product,
+    warehouse: row.warehouse,
+    onHand: row.onHand,
+    reorderPoint: row.product?.reorderPoint,
+    reorderQty: row.product?.reorderQty,
+    suggestedSupplier: row.product?.supplierProducts?.[0]?.supplier ?? null,
+    suggestedSupplierProduct: row.product?.supplierProducts?.[0] ?? null,
+    shortfall: (row.product?.reorderPoint ?? 0) - row.onHand,
+  }));
+
+  res.json(recommendations);
+}
+
 async function cancelCycleCount(req, res) {
   const count = await prisma.cycleCount.findUnique({ where: { id: req.params.id } });
   if (!count) return res.status(404).json({ error: 'Cycle count not found' });
@@ -845,4 +885,5 @@ module.exports = {
   updateCycleCountLine,
   postCycleCount,
   cancelCycleCount,
+  getReorderRecommendations,
 };

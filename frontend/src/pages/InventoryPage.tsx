@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
 import type { InventoryTab } from '../types/inventory';
 import CycleCountsTab from './inventory/CycleCountsTab';
 import LocationsTab from './inventory/LocationsTab';
 import LotsTab from './inventory/LotsTab';
 import MovementsTab from './inventory/MovementsTab';
 import ProductsTab from './inventory/ProductsTab';
+import ReorderTab from './inventory/ReorderTab';
 import StockByWarehouseTab from './inventory/StockByWarehouseTab';
 import TransfersTab from './inventory/TransfersTab';
 import WarehouseManageModal from './inventory/WarehouseManageModal';
@@ -19,6 +20,7 @@ const tabs: Array<{ id: InventoryTab; label: string; icon: React.ElementType }> 
   { id: 'transfers', label: 'Transfers', icon: ArrowRightLeft },
   { id: 'counts', label: 'Cycle Counts', icon: ClipboardCheck },
   { id: 'movements', label: 'Movements', icon: ClipboardList },
+  { id: 'reorder', label: 'Reorder', icon: AlertTriangle },
 ];
 
 function normalizeTab(value: string | null): InventoryTab {
@@ -78,6 +80,7 @@ export default function InventoryPage() {
       {activeTab === 'transfers' ? <TransfersTab /> : null}
       {activeTab === 'counts' ? <CycleCountsTab /> : null}
       {activeTab === 'movements' ? <MovementsTab /> : null}
+      {activeTab === 'reorder' ? <ReorderTab /> : null}
 
       <WarehouseManageModal open={warehouseModalOpen} onClose={() => setWarehouseModalOpen(false)} />
 
