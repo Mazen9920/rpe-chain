@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, Download, FileText, Users, ShoppingBag } from 'lucide-react';
+import { BarChart3, Download, FileText, Users, ShoppingBag, BookMarked } from 'lucide-react';
 import { reportsService, arAgingService } from '../services';
 import { formatMoney } from '../utils/format';
+import SavedReportsTab from '../components/reports/SavedReportsTab';
 
-type Tab = 'ap-aging' | 'ar-aging' | 'supplier-scorecards' | 'sales-fulfillment';
+type Tab = 'ap-aging' | 'ar-aging' | 'supplier-scorecards' | 'sales-fulfillment' | 'saved';
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'ap-aging', label: 'AP Aging', icon: FileText },
   { id: 'ar-aging', label: 'AR Aging', icon: FileText },
   { id: 'supplier-scorecards', label: 'Supplier Scorecards', icon: Users },
   { id: 'sales-fulfillment', label: 'Sales Fulfillment', icon: ShoppingBag },
+  { id: 'saved', label: 'Saved Reports', icon: BookMarked },
 ];
 
 const money = (n: number | null | undefined, ccy?: string) =>
@@ -291,6 +293,7 @@ export default function ReportsPage() {
         {tab === 'ar-aging' && <ArAgingReport />}
         {tab === 'supplier-scorecards' && <SupplierScorecardsReport />}
         {tab === 'sales-fulfillment' && <SalesFulfillmentReport />}
+        {tab === 'saved' && <SavedReportsTab />}
       </div>
     </div>
   );

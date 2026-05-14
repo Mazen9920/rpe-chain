@@ -42,6 +42,7 @@ const fxRoutes = require('./routes/fx.routes');
 require('./services/integrations/email/handler');
 require('./services/integrations/shopify/handler');
 require('./services/integrations/bosta/handler');
+require('./services/integrations/scheduledReport/handler');
 
 const app = express();
 

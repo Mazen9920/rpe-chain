@@ -59,6 +59,8 @@ model User {
   voidedCustomerInvoices   CustomerInvoice[] @relation("CustomerInvoiceVoidedBy")
   createdCustomerPayments  CustomerPayment[] @relation("CustomerPaymentCreatedBy")
   voidedCustomerPayments   CustomerPayment[] @relation("CustomerPaymentVoidedBy")
+  createdReportDefinitions ReportDefinition[] @relation("ReportDefinitionCreatedBy")
+  createdReportSchedules   ReportSchedule[]   @relation("ReportScheduleCreatedBy")
 }
 
 enum Role {
@@ -1524,4 +1526,48 @@ model AlertSubscription {
 
   @@index([userId, isActive])
   @@index([alertType, severity, isActive])
+}
+
+// Saved custom-report definition. A definition wraps an existing report key
+// (e.g. "ap-aging", "ar-aging", "sales-trend") with stored filter params,
+// allowing one-click re-run + scheduled email export.
+model ReportDefinition {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  reportKey   String   // matches a key in reportRenderer.RENDERERS
+  params      Json     @default("{}") // filter params merged into renderer call
+  isShared    Boolean  @default(false)
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  owner       User              @relation("ReportDefinitionCreatedBy", fields: [ownerId], references: [id])
+  schedules   ReportSchedule[]
+
+  @@index([ownerId, isShared])
+  @@index([reportKey])
+}
+
+// Cron-driven scheduled report run. Dispatcher enqueues an outbox row with
+// target SCHEDULED_REPORT, payload {definitionId, format, recipients}.
+model ReportSchedule {
+  id           String   @id @default(uuid())
+  definitionId String
+  cron         String   // e.g. "0 7 * * *" (daily 7am) — minimum 5-min granularity
+  format       String   @default("PDF") // PDF | XLSX | CSV
+  recipients   String[] // email addresses
+  isActive     Boolean  @default(true)
+  lastRunAt    DateTime?
+  nextRunAt    DateTime?
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  definition   ReportDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  createdBy    User             @relation("ReportScheduleCreatedBy", fields: [createdById], references: [id])
+
+  @@index([isActive, nextRunAt])
+  @@index([definitionId])
 }

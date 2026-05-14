@@ -11,6 +11,7 @@ outbox.registerHandler('email', async (row) => {
     html: p.html,
     text: p.text,
     tag: p.tag || row.action,
+    attachments: p.attachments,
   });
 });
 
