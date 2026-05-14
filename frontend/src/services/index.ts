@@ -458,3 +458,11 @@ export const creditNoteService = {
     lines: Array<{ description?: string; quantity: number; unitPrice: number; poLineId?: string; grnLineId?: string }>;
   }) => api.post<SupplierInvoice>('/ap/credit-notes', data).then((r) => r.data),
 };
+
+export const settingsService = {
+  getMatchTolerances: () => api.get('/settings/match-tolerances').then((r) => r.data),
+  updateGlobalMatchTolerances: (body: { qtyPct?: number; pricePct?: number }) =>
+    api.put('/settings/match-tolerances/global', body).then((r) => r.data),
+  updateSupplierMatchTolerances: (id: string, body: { qtyPct?: number | null; pricePct?: number | null }) =>
+    api.put(`/settings/match-tolerances/suppliers/${id}`, body).then((r) => r.data),
+};

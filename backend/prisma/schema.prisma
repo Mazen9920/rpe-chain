@@ -306,6 +306,10 @@ model Supplier {
   approvalStatus   String   @default("DRAFT") // DRAFT | UNDER_REVIEW | APPROVED | PREFERRED | BLOCKED
   notes            String?
 
+  // 3-way-match tolerances (null → use global default from AlertRule)
+  qtyTolerancePct    Decimal? @db.Decimal(5, 2)
+  priceTolerancePct  Decimal? @db.Decimal(5, 2)
+
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

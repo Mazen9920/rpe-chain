@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { apInvoiceService, paymentService, apAgingService } from '../services';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Settings, X } from 'lucide-react';
+import { apInvoiceService, paymentService, apAgingService, settingsService } from '../services';
 import type { InvoiceStatus, InvoiceType, AgingBucket } from '../types/ap';
 
 type Tab = 'invoices' | 'match' | 'payments' | 'aging';
@@ -32,12 +33,21 @@ const fmt = (n?: number | null, cur = 'USD') => {
 
 export default function AccountsPayablePage() {
   const [tab, setTab] = useState<Tab>('invoices');
+  const [tolerancesOpen, setTolerancesOpen] = useState(false);
 
   return (
     <div className="p-6 space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-slate-800">Accounts Payable</h2>
-        <p className="text-sm text-slate-500">Supplier invoices, matching, payments & aging</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Accounts Payable</h2>
+          <p className="text-sm text-slate-500">Supplier invoices, matching, payments & aging</p>
+        </div>
+        <button
+          onClick={() => setTolerancesOpen(true)}
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+        >
+          <Settings size={14} /> Match tolerances
+        </button>
       </div>
 
       <KpiBar />
@@ -65,6 +75,119 @@ export default function AccountsPayablePage() {
       {tab === 'match' && <MatchQueueTab />}
       {tab === 'payments' && <PaymentsTab />}
       {tab === 'aging' && <AgingTab />}
+
+      {tolerancesOpen && <MatchTolerancesDrawer onClose={() => setTolerancesOpen(false)} />}
+    </div>
+  );
+}
+
+function MatchTolerancesDrawer({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery<{
+    global: { qtyPct: number; pricePct: number; qtySource: string; priceSource: string };
+    overrides: Array<{ supplierId: string; supplierCode: string; supplierName: string; qtyPct: number | null; pricePct: number | null }>;
+    bounds: { min: number; max: number };
+  }>({ queryKey: ['settings', 'match-tolerances'], queryFn: settingsService.getMatchTolerances });
+
+  const [qty, setQty] = useState('');
+  const [price, setPrice] = useState('');
+
+  const updateGlobal = useMutation({
+    mutationFn: (body: { qtyPct?: number; pricePct?: number }) => settingsService.updateGlobalMatchTolerances(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings', 'match-tolerances'] });
+      setQty('');
+      setPrice('');
+    },
+  });
+
+  const onSaveGlobal = () => {
+    const body: { qtyPct?: number; pricePct?: number } = {};
+    if (qty !== '') body.qtyPct = Number(qty);
+    if (price !== '') body.pricePct = Number(price);
+    if (Object.keys(body).length > 0) updateGlobal.mutate(body);
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/40 flex justify-end" onClick={onClose}>
+      <div className="w-full max-w-xl bg-white shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-slate-200">
+          <div>
+            <div className="text-sm text-slate-500">Settings</div>
+            <div className="text-lg font-semibold text-slate-800">3-way match tolerances</div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-6">
+          {isLoading || !data ? (
+            <div className="text-sm text-slate-500">Loading…</div>
+          ) : (
+            <>
+              <div className="rounded-lg border border-slate-200 p-4">
+                <div className="text-sm font-medium text-slate-700 mb-3">Global defaults</div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <label className="block">
+                    <span className="text-slate-600">Qty tolerance % <span className="text-xs text-slate-400">(current: {data.global.qtyPct}% · {data.global.qtySource})</span></span>
+                    <input
+                      type="number" min={data.bounds.min} max={data.bounds.max} step="0.1"
+                      value={qty} onChange={(e) => setQty(e.target.value)}
+                      placeholder={String(data.global.qtyPct)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-slate-600">Price tolerance % <span className="text-xs text-slate-400">(current: {data.global.pricePct}% · {data.global.priceSource})</span></span>
+                    <input
+                      type="number" min={data.bounds.min} max={data.bounds.max} step="0.1"
+                      value={price} onChange={(e) => setPrice(e.target.value)}
+                      placeholder={String(data.global.pricePct)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                    />
+                  </label>
+                </div>
+                <button
+                  onClick={onSaveGlobal}
+                  disabled={updateGlobal.isPending || (qty === '' && price === '')}
+                  className="mt-3 inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Save globals
+                </button>
+                {updateGlobal.isError ? (
+                  <div className="mt-2 text-xs text-red-600">{(updateGlobal.error as Error)?.message || 'Update failed'}</div>
+                ) : null}
+              </div>
+
+              <div className="rounded-lg border border-slate-200 p-4">
+                <div className="text-sm font-medium text-slate-700 mb-3">Per-supplier overrides ({data.overrides.length})</div>
+                {data.overrides.length === 0 ? (
+                  <div className="text-xs text-slate-500">No overrides. Use a supplier's detail page to set per-supplier tolerances.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 text-xs uppercase">
+                        <th className="py-1">Supplier</th><th>Qty %</th><th>Price %</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {data.overrides.map((o) => (
+                        <tr key={o.supplierId}>
+                          <td className="py-2 text-slate-700">{o.supplierCode} — {o.supplierName}</td>
+                          <td className="py-2">{o.qtyPct != null ? `${o.qtyPct}%` : <span className="text-slate-400">—</span>}</td>
+                          <td className="py-2">{o.pricePct != null ? `${o.pricePct}%` : <span className="text-slate-400">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="text-xs text-slate-500">
+                Tolerances resolve: <strong>per-supplier override</strong> → <strong>global</strong> → defaults (2% qty / 1% price). Allowed range: {data.bounds.min}–{data.bounds.max}%.
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

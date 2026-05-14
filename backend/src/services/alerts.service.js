@@ -19,6 +19,7 @@ const AUDIENCE = {
   DEMAND_ANOMALY: ['WAREHOUSE', 'PROCUREMENT', 'SALES', 'ADMIN'],
   MARGIN: ['SALES', 'FINANCE', 'ADMIN'],
   LEAD_TIME: ['PROCUREMENT', 'ADMIN'],
+  MATCH_EXCEPTION: ['FINANCE', 'ADMIN'],
 };
 
 // Carrier SLA (days from dispatch to expected delivery) — used when estimatedArrival missing.
@@ -697,6 +698,53 @@ async function scanLeadTimeDriftAlerts() {
 }
 
 // ─── Master scan ─────────────────────────────────────────────────────────────
+async function scanInvoiceExceptionAlerts() {
+  const TYPES = ['MATCH_EXCEPTION'];
+  const openByKey = await loadOpenAlertsForTypes(TYPES);
+  const stillActive = new Set();
+
+  const cutoff = new Date(Date.now() - 24 * 3600 * 1000);
+  const exceptions = await prisma.supplierInvoice.findMany({
+    where: { status: 'EXCEPTION', createdAt: { lte: cutoff } },
+    include: {
+      supplier: { select: { id: true, code: true, name: true } },
+      lines: { select: { matchStatus: true } },
+    },
+  });
+
+  for (const inv of exceptions) {
+    const variance = Number(inv.varianceAmount || 0);
+    let severity;
+    if (variance > 10000) severity = 'CRITICAL';
+    else if (variance > 1000) severity = 'HIGH';
+    else severity = 'MEDIUM';
+
+    const ageHours = Math.floor((Date.now() - new Date(inv.createdAt).getTime()) / 3600000);
+    const badLines = inv.lines.filter((l) => l.matchStatus !== 'MATCHED' && l.matchStatus !== 'NO_PO').length;
+
+    await upsertAlert(stillActive, openByKey, {
+      type: 'MATCH_EXCEPTION',
+      severity,
+      supplierId: inv.supplierId,
+      entityType: 'SupplierInvoice',
+      entityId: inv.id,
+      payload: {
+        invoiceNumber: inv.invoiceNumber,
+        supplierCode: inv.supplier?.code,
+        supplierName: inv.supplier?.name,
+        varianceAmount: variance,
+        currency: inv.currency,
+        ageHours,
+        exceptionLineCount: badLines,
+      },
+      reasoning: `Invoice ${inv.invoiceNumber} stuck in EXCEPTION ${ageHours}h — variance ${variance.toFixed(2)} ${inv.currency} across ${badLines} line(s).`,
+    });
+  }
+
+  const resolved = await autoResolveStale(TYPES, stillActive);
+  return { active: stillActive.size, resolved };
+}
+
 async function runAllScans({ actorId = null, sourceIp = null } = {}) {
   const compliance = require('./compliance.service');
   const summary = {
@@ -709,6 +757,7 @@ async function runAllScans({ actorId = null, sourceIp = null } = {}) {
     demandAnomaly: await scanDemandAnomalyAlerts(),
     marginErosion: await scanMarginErosionAlerts(),
     leadTimeDrift: await scanLeadTimeDriftAlerts(),
+    matchException: await scanInvoiceExceptionAlerts(),
   };
   await logEvent({ eventType: 'ALERTS_SCANNED', entityType: 'Alert', entityId: 'all', actorId, payload: summary, sourceIp });
   return summary;
@@ -809,6 +858,7 @@ module.exports = {
   scanDemandAnomalyAlerts,
   scanMarginErosionAlerts,
   scanLeadTimeDriftAlerts,
+  scanInvoiceExceptionAlerts,
   runAllScans,
   listAlerts,
   acknowledgeAlert,

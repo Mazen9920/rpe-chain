@@ -28,6 +28,9 @@ fi
 if [ -f test-classification.sh ]; then
   SCRIPTS+=(test-classification.sh)
 fi
+if [ -f test-match-tolerances.sh ]; then
+  SCRIPTS+=(test-match-tolerances.sh)
+fi
 
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
