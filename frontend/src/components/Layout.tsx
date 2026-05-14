@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Package, Users, ShoppingCart, Truck, Factory, LogOut, PackageCheck, Receipt, UserCheck, ClipboardList, Bell, BarChart3, Mail, DollarSign, Menu, X, Smartphone, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Package, Users, ShoppingCart, Truck, Factory, LogOut, PackageCheck, Receipt, UserCheck, ClipboardList, Bell, BarChart3, Mail, DollarSign, Menu, X, Smartphone, BookOpen, Undo2 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import AlertsBell from './AlertsBell';
 import api from '../lib/api';
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/sales-orders', icon: ClipboardList, label: 'Sales Orders' },
   { to: '/shipments', icon: Truck, label: 'Shipments' },
   { to: '/ar', icon: Receipt, label: 'Accounts Receivable' },
+  { to: '/customer-returns', icon: Undo2, label: 'Customer Returns' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/notifications', icon: Mail, label: 'Notifications' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },

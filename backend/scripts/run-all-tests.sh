@@ -60,6 +60,11 @@ if [ -f test-oauth.sh ]; then
   SCRIPTS+=(test-oauth.sh)
 fi
 
+# v2.0.0 — Customer Returns (RMA).
+if [ -f test-returns.sh ]; then
+  SCRIPTS+=(test-returns.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""
