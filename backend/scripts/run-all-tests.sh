@@ -55,6 +55,11 @@ if [ -f test-gl.sh ]; then
   SCRIPTS+=(test-gl.sh)
 fi
 
+# v1.7.1 — OAuth2 integrations (real QBO+Xero push).
+if [ -f test-oauth.sh ]; then
+  SCRIPTS+=(test-oauth.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""
