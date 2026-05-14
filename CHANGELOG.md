@@ -3,6 +3,36 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.9.0] — 2026-05-14 — `Product.volumeM3` + VOLUME landed-cost allocation
+
+Closes a latent gap: `LandedCostAllocation.allocationMethod` has accepted
+`VOLUME` since the initial schema, but `goodsReceipt.service.js` silently fell
+back to `VALUE` because the underlying `Product` model lacked a volume column.
+Adds the column, wires the basis math, and exposes the field in the product
+form. WEIGHT and VALUE fallbacks still kick in when any line is missing data,
+preserving the existing "always-pick-something" contract.
+
+### Added
+- **Migration `20260514124559_product_volume_m3`** — adds nullable
+  `Product.volumeM3 Decimal(10,6)`. Six decimal places handles tiny items (a
+  single mask at ~3e-5 m³) and shipping containers (67 m³) alike.
+- Frontend: `volumeM3` field on `Product` + `ProductFormInput` types and a
+  step=0.000001 input in `ProductFormSlideOver`.
+
+### Changed
+- `backend/src/services/goodsReceipt.service.js#addLandedCost`:
+  - `include` on the GRN now selects `product.volumeM3` alongside `weightKg`.
+  - `basisMethod === 'VOLUME'` now computes `volumeM3 * qtyReceived` per layer
+    when every line has a non-null `volumeM3`, else cleanly falls back to VALUE
+    (matching the existing WEIGHT fallback semantics).
+
+### Verified
+- `test-procurement.sh`: all 20 assertions still pass.
+
+### Tags
+- `volume-v1.0` (section freeze)
+- `v1.9.0` (release)
+
 ## [1.8.0] — 2026-05-14 — Nightly restore drill (Track B)
 
 Proves the existing `backup.sh` actually produces restorable dumps. Round-trips

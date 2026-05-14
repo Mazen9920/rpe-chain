@@ -16,6 +16,7 @@ const emptyForm: ProductFormInput = {
   costPrice: '0.00',
   sellingPrice: '0.00',
   weightKg: '',
+  volumeM3: '',
   hsCode: '',
   certifications: [],
 };
@@ -37,6 +38,7 @@ function toForm(product?: Product | null): ProductFormInput {
     costPrice: String(product.costPrice ?? '0.00'),
     sellingPrice: String(product.sellingPrice ?? '0.00'),
     weightKg: product.weightKg ? String(product.weightKg) : '',
+    volumeM3: product.volumeM3 ? String(product.volumeM3) : '',
     hsCode: product.hsCode ?? '',
     certifications,
   };
@@ -53,6 +55,7 @@ function normalize(form: ProductFormInput) {
     reorderPoint: Number(form.reorderPoint),
     reorderQty: Number(form.reorderQty),
     weightKg: form.weightKg || null,
+    volumeM3: form.volumeM3 || null,
     hsCode: form.hsCode || null,
     certifications,
   };
@@ -175,6 +178,10 @@ export default function ProductFormSlideOver({
             <label className="space-y-1 text-sm">
               <span className="font-medium text-slate-700">Weight kg</span>
               <input min={0} step="0.001" type="number" value={form.weightKg ?? ''} onChange={(e) => update('weightKg', e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium text-slate-700">Volume m³</span>
+              <input min={0} step="0.000001" type="number" value={form.volumeM3 ?? ''} onChange={(e) => update('volumeM3', e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500" />
             </label>
             <label className="space-y-1 text-sm">
               <span className="font-medium text-slate-700">HS Code</span>
