@@ -578,3 +578,99 @@ export const arCreditNoteService = {
     lines: Array<{ description?: string; quantity: number; unitPrice: number; productId?: string }>;
   }) => api.post<CustomerInvoice>('/ar/credit-notes', data).then((r) => r.data),
 };
+
+// ─── Tier 4 #15 — Custom Reports + Schedules ─────────────────────────────────
+
+export type ReportKey = 'ap-aging' | 'ar-aging' | 'supplier-scorecards' | 'sales-fulfillment';
+export type ReportFormat = 'CSV' | 'XLSX' | 'PDF';
+
+export interface ReportDefinition {
+  id: string;
+  name: string;
+  description: string | null;
+  reportKey: string;
+  params: Record<string, unknown>;
+  isShared: boolean;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+  owner?: { id: string; name: string; email: string };
+  schedules?: ReportSchedule[];
+}
+
+export interface ReportSchedule {
+  id: string;
+  definitionId: string;
+  cron: string;
+  format: ReportFormat;
+  recipients: string[];
+  isActive: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  definition?: Partial<ReportDefinition>;
+  createdBy?: { id: string; name: string; email: string };
+}
+
+export const reportDefinitionService = {
+  listAvailable: () =>
+    api.get<{ reportKeys: string[] }>('/reports/definitions/available').then((r) => r.data),
+  list: (params?: { reportKey?: string }) =>
+    api.get<{ items: ReportDefinition[] }>('/reports/definitions', { params }).then((r) => r.data),
+  get: (id: string) =>
+    api.get<ReportDefinition>(`/reports/definitions/${id}`).then((r) => r.data),
+  create: (data: {
+    name: string;
+    description?: string | null;
+    reportKey: string;
+    params?: Record<string, unknown>;
+    isShared?: boolean;
+  }) => api.post<ReportDefinition>('/reports/definitions', data).then((r) => r.data),
+  update: (
+    id: string,
+    data: Partial<{ name: string; description: string | null; params: Record<string, unknown>; isShared: boolean }>,
+  ) => api.patch<ReportDefinition>(`/reports/definitions/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/reports/definitions/${id}`).then((r) => r.data),
+  renderUrl: (id: string, format: ReportFormat) =>
+    `/api/reports/render/definition/${id}?format=${format.toLowerCase()}&download=1`,
+  download: async (id: string, format: ReportFormat, filenameHint?: string) => {
+    const res = await api.get(`/reports/render/definition/${id}`, {
+      params: { format: format.toLowerCase(), download: 1 },
+      responseType: 'blob',
+    });
+    const blob = new Blob([res.data as BlobPart], {
+      type: (res.headers['content-type'] as string) || 'application/octet-stream',
+    });
+    const disp = (res.headers['content-disposition'] as string) || '';
+    const m = disp.match(/filename="?([^";]+)"?/);
+    const filename = m ? m[1] : `${filenameHint || 'report'}.${format.toLowerCase()}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+};
+
+export const reportScheduleService = {
+  list: (params?: { definitionId?: string }) =>
+    api.get<{ items: ReportSchedule[] }>('/reports/schedules', { params }).then((r) => r.data),
+  get: (id: string) => api.get<ReportSchedule>(`/reports/schedules/${id}`).then((r) => r.data),
+  create: (data: {
+    definitionId: string;
+    cron: string;
+    format: ReportFormat;
+    recipients: string[];
+    isActive?: boolean;
+  }) => api.post<ReportSchedule>('/reports/schedules', data).then((r) => r.data),
+  update: (id: string, data: Partial<{ cron: string; format: ReportFormat; recipients: string[]; isActive: boolean }>) =>
+    api.patch<ReportSchedule>(`/reports/schedules/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/reports/schedules/${id}`).then((r) => r.data),
+  runNow: (id: string) =>
+    api.post<{ outboxId: string; status: string }>(`/reports/schedules/${id}/run-now`).then((r) => r.data),
+};

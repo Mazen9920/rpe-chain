@@ -107,6 +107,24 @@ async function runWeeklyClassification() {
   }
 }
 
+async function runReportScheduleDispatch() {
+  const prisma = require('../lib/prisma');
+  // Make sure SCHEDULED_REPORT handler is registered.
+  require('../services/integrations/scheduledReport/handler');
+  const reportSchedule = require('../services/reportSchedule.service');
+  const startedAt = Date.now();
+  try {
+    const result = await reportSchedule.dispatchDue();
+    if (result.dueCount > 0) {
+      console.log(`[scheduler] report-schedule dispatch: ${JSON.stringify(result)} in ${Date.now() - startedAt}ms`);
+      await logEvent(prisma, 'SCHEDULER_REPORT_DISPATCH', { result, durationMs: Date.now() - startedAt });
+    }
+  } catch (e) {
+    console.error('[scheduler] report-schedule dispatch failed:', e.message);
+    await logEvent(prisma, 'SCHEDULER_REPORT_DISPATCH_FAILED', { error: e.message });
+  }
+}
+
 function start() {
   if (process.env.DISABLE_SCHEDULER === 'true') {
     console.log('[scheduler] disabled via DISABLE_SCHEDULER=true');
@@ -120,6 +138,9 @@ function start() {
 
   // Every minute — outbox dispatcher (Shopify, Bosta, email)
   jobs.push(cron.schedule('* * * * *', runOutboxPass, { scheduled: true }));
+
+  // Every 5 minutes — scheduled-report dispatcher (enqueues outbox rows)
+  jobs.push(cron.schedule('*/5 * * * *', runReportScheduleDispatch, { scheduled: true }));
 
   // Daily 02:00 — full cross-module pass + forecasts + reorder
   jobs.push(cron.schedule('0 2 * * *', runDailyPass, { scheduled: true }));
@@ -145,4 +166,4 @@ function stop() {
   console.log('[scheduler] stopped');
 }
 
-module.exports = { start, stop, runInventoryAlertScan, runDailyPass, runOutboxPass, runDailyDigest, runWeeklyClassification };
+module.exports = { start, stop, runInventoryAlertScan, runDailyPass, runOutboxPass, runDailyDigest, runWeeklyClassification, runReportScheduleDispatch };

@@ -40,6 +40,11 @@ if [ -f test-ar.sh ]; then
   SCRIPTS+=(test-ar.sh)
 fi
 
+# Tier 4 #15 — Custom reports + scheduled exports (added in v1.5.0).
+if [ -f test-reports.sh ]; then
+  SCRIPTS+=(test-reports.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""

@@ -3,6 +3,89 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.5.0] — 2026-05-14 — Tier 4 #15 Custom Reports + Scheduled Exports
+
+Saved report definitions, multi-format rendering (CSV / XLSX / PDF), and
+recurring cron-driven email delivery via the outbox.
+
+### Added
+- **Data model**: `ReportDefinition` (id, name, description, reportKey, params
+  JSON, isShared, ownerId, soft-delete) and `ReportSchedule` (cron, format,
+  recipients[], isActive, lastRunAt, nextRunAt) with cascading FK.
+- **Report registry** (`reports.service.js`) — four built-in builders:
+  `ap-aging`, `ar-aging`, `supplier-scorecards`, `sales-fulfillment`. Each
+  returns a normalised envelope `{title, columns, rows, summary}` with column
+  format hints (`date`, `datetime`, `money`, `pct`).
+- **Renderer** (`reportRenderer.service.js`) — CSV (escaped), XLSX (ExcelJS,
+  auto-width + `numFmt` per format), PDF (PDFKit A4 landscape, 5000-row safety
+  cap, paginated). Returns `{contentType, filename, buffer}`.
+- **Definition CRUD** (`reportDefinition.service.js`) — visibility-aware list,
+  `isShared` publishing restricted to ADMIN/FINANCE, soft delete via
+  `deletedAt`, owner / role-based access checks.
+- **Schedule CRUD + dispatch** (`reportSchedule.service.js`) — cron validation
+  via `cron-parser`, recipient email validation, `dispatchDue()` claims up to
+  50 due active schedules per tick and enqueues outbox rows
+  (`target='SCHEDULED_REPORT', action='RENDER_AND_EMAIL'`), advances
+  `nextRunAt`. `runNow` enqueues immediately. `handleScheduledReport` builds
+  + renders + enqueues email row with base64 attachment.
+- **Outbox integration**: new handler `scheduledReport/handler.js` registered
+  for `SCHEDULED_REPORT`. Email handler now forwards `attachments[]` to mailer.
+- **Mailer attachments**: `mailer.sendEmail` accepts `attachments:
+  [{filename, content_b64}]`; SendGrid path emits `disposition:'attachment'`,
+  SMTP path uses Buffer attachments, noop path logs `[{filename, bytes}]`.
+- **Scheduler hook**: `runReportScheduleDispatch()` registered on `*/5 * * * *`
+  alongside existing jobs.
+- **REST API** (mounted at `/api/reports`):
+  - `GET  /definitions/available` — list registered report keys.
+  - `GET  /definitions`, `GET /definitions/:id`,
+    `POST /definitions`, `PATCH /definitions/:id`, `DELETE /definitions/:id`.
+  - `GET  /schedules`, `GET /schedules/:id`,
+    `POST /schedules`, `PATCH /schedules/:id`, `DELETE /schedules/:id`,
+    `POST /schedules/:id/run-now`.
+  - `GET  /render?reportKey=&format=` and
+    `GET  /render/definition/:id?format=` — ad-hoc / saved-def rendering with
+    `Content-Disposition: inline` (or `attachment` when `?download=1`).
+- **Frontend**:
+  - `reportDefinitionService` / `reportScheduleService` with TS types and a
+    `download(id, format, filenameHint?)` helper that parses
+    `Content-Disposition` and triggers a real `<a download>` click.
+  - New **Saved Reports** tab inside `ReportsPage.tsx`
+    (`SavedReportsTab.tsx`): saved-definition list with CSV/XLSX/PDF
+    download menu, definition drawer (name, description, report key, params
+    JSON, shared toggle), schedule drawer (cron presets + raw editor,
+    format buttons, recipients textarea), per-schedule run-now and delete.
+
+### Changed
+- `mailer.sendEmail` signature now accepts `attachments` and forwards through
+  all three modes (sendgrid / smtp / noop).
+- `email` outbox handler forwards `p.attachments` when present.
+
+### Migrations
+- `20260514113129_add_report_definitions` — creates `ReportDefinition`,
+  `ReportSchedule`, and two reverse relations on `User`
+  (`ReportDefinitionCreatedBy`, `ReportScheduleCreatedBy`).
+
+### RBAC
+| Endpoint                              | Roles                                                         |
+| ------------------------------------- | ------------------------------------------------------------- |
+| `GET  /reports/definitions*`          | ADMIN, PROCUREMENT, WAREHOUSE, SALES, FINANCE, AUDITOR, READ_ONLY (visibility-filtered) |
+| `POST/PATCH/DELETE /reports/definitions` | ADMIN, FINANCE, PROCUREMENT, SALES (publishing `isShared=true` restricted to ADMIN/FINANCE) |
+| `POST/PATCH/DELETE /reports/schedules`, `POST /reports/schedules/:id/run-now` | ADMIN, FINANCE |
+| `GET  /reports/render*`               | All 7 roles                                                   |
+
+### Dependencies
+- Added `pdfkit`, `exceljs`, `cron-parser` to `backend/`.
+
+### Smoke matrix
+`backend/scripts/test-reports.sh` — 23 assertions covering RBAC, all three
+renderers (CSV/XLSX/PDF), definition CRUD + visibility (private vs shared,
+SHARED_FORBIDDEN), schedule CRUD with cron / format / recipient validation,
+run-now, and end-to-end outbox dispatch (`SCHEDULED_REPORT` row →
+synthesised email outbox row with PDF attachment → both reach `SENT`).
+Wired into `run-all-tests.sh` under the Tier 4 section.
+
+Tags: `reports-v1.0`, `v1.5.0`.
+
 ## [1.4.0] — 2026-05-14 — Tier 4 #14 Accounts Receivable
 
 End-to-end customer billing on top of v1.3.0. Mirrors the v1.0 AP module

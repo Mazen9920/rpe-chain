@@ -33,26 +33,52 @@ function init() {
 }
 init();
 
-async function sendEmail({ to, subject, html, text, tag }) {
+async function sendEmail({ to, subject, html, text, tag, attachments }) {
   if (!to || !subject) throw new Error('mailer: to + subject required');
   const payload = {
     to, from: { email: FROM, name: FROM_NAME }, subject,
     html: html || undefined, text: text || stripHtml(html || ''),
   };
+  const att = Array.isArray(attachments) ? attachments : [];
   if (mode === 'sendgrid') {
-    await sgMail.send({ ...payload, categories: tag ? [tag] : undefined });
-    return { mode, to, subject };
+    // SendGrid expects base64-encoded content.
+    const sgAtts = att.map((a) => ({
+      filename: a.filename,
+      type: a.contentType || 'application/octet-stream',
+      content: Buffer.isBuffer(a.content)
+        ? a.content.toString('base64')
+        : (a.encoding === 'base64' ? a.content : Buffer.from(a.content).toString('base64')),
+      disposition: 'attachment',
+    }));
+    await sgMail.send({
+      ...payload,
+      categories: tag ? [tag] : undefined,
+      attachments: sgAtts.length ? sgAtts : undefined,
+    });
+    return { mode, to, subject, attachments: sgAtts.length };
   }
   if (mode === 'smtp') {
+    const smtpAtts = att.map((a) => ({
+      filename: a.filename,
+      content: Buffer.isBuffer(a.content)
+        ? a.content
+        : (a.encoding === 'base64' ? Buffer.from(a.content, 'base64') : Buffer.from(a.content)),
+      contentType: a.contentType || 'application/octet-stream',
+    }));
     await smtpTransport.sendMail({
       from: `"${FROM_NAME}" <${FROM}>`,
       to, subject, html: payload.html, text: payload.text,
+      attachments: smtpAtts.length ? smtpAtts : undefined,
     });
-    return { mode, to, subject };
+    return { mode, to, subject, attachments: smtpAtts.length };
   }
   // noop — log only
-  logger.info({ to, subject, tag, body: (text || stripHtml(html || '')).slice(0, 200) }, 'mailer noop (no creds set)');
-  return { mode: 'noop', to, subject };
+  logger.info({
+    to, subject, tag,
+    body: (text || stripHtml(html || '')).slice(0, 200),
+    attachments: att.map((a) => ({ filename: a.filename, bytes: Buffer.isBuffer(a.content) ? a.content.length : (a.content || '').length })),
+  }, 'mailer noop (no creds set)');
+  return { mode: 'noop', to, subject, attachments: att.length };
 }
 
 function stripHtml(s) {
