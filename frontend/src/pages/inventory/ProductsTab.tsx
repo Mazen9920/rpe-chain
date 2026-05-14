@@ -98,16 +98,16 @@ export default function ProductsTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50">
-                  {['SKU', 'Name', 'Category', 'On Hand', 'Reserved', 'Reorder Point', 'Status', 'Actions'].map((heading) => (
+                  {['SKU', 'Name', 'Category', 'On Hand', 'Reserved', 'Reorder Point', 'Class', 'Status', 'Actions'].map((heading) => (
                     <th key={heading} className="text-left px-5 py-3 text-slate-500 font-medium">{heading}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? Array.from({ length: 5 }).map((_, row) => (
-                  <tr key={row}>{Array.from({ length: 8 }).map((_, cell) => <td key={cell} className="px-5 py-3"><div className="h-4 bg-slate-100 rounded animate-pulse" /></td>)}</tr>
+                  <tr key={row}>{Array.from({ length: 9 }).map((_, cell) => <td key={cell} className="px-5 py-3"><div className="h-4 bg-slate-100 rounded animate-pulse" /></td>)}</tr>
                 )) : filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-500">No products found.</td></tr>
+                  <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-500">No products found.</td></tr>
                 ) : filtered.map((product) => (
                   <tr key={product.id} className="hover:bg-slate-50">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500">{product.sku}</td>
@@ -116,6 +116,14 @@ export default function ProductsTab() {
                     <td className="px-5 py-3 text-slate-600">{product.totalOnHand ?? 0} {product.uom}</td>
                     <td className="px-5 py-3 text-slate-600">{product.totalReserved ?? 0}</td>
                     <td className="px-5 py-3 text-slate-600">{product.reorderPoint}</td>
+                    <td className="px-5 py-3">
+                      {product.abcClass || product.xyzClass ? (
+                        <span className="inline-flex items-center gap-1">
+                          {product.abcClass ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${product.abcClass === 'A' ? 'bg-emerald-100 text-emerald-700' : product.abcClass === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{product.abcClass}</span> : null}
+                          {product.xyzClass ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${product.xyzClass === 'X' ? 'bg-sky-100 text-sky-700' : product.xyzClass === 'Y' ? 'bg-indigo-100 text-indigo-700' : 'bg-fuchsia-100 text-fuchsia-700'}`}>{product.xyzClass}</span> : null}
+                        </span>
+                      ) : <span className="text-slate-400 text-xs">—</span>}
+                    </td>
                     <td className="px-5 py-3">
                       {product.isLowStock ? <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Low Stock</span> : <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">OK</span>}
                     </td>

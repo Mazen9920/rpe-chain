@@ -25,6 +25,9 @@ fi
 if [ -f test-anomaly-alerts.sh ]; then
   SCRIPTS+=(test-anomaly-alerts.sh)
 fi
+if [ -f test-classification.sh ]; then
+  SCRIPTS+=(test-classification.sh)
+fi
 
 FAILED=()
 for s in "${SCRIPTS[@]}"; do

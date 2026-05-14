@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { AlertCircle, AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, FileBarChart2, Layers, MapPinned, Package, Warehouse } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, ClipboardList, FileBarChart2, Layers, MapPinned, Package, Sparkles, Warehouse } from 'lucide-react';
 import { inventoryService } from '../services';
 import type { InventoryTab } from '../types/inventory';
 import AlertsTab from './inventory/AlertsTab';
+import ClassificationTab from './inventory/ClassificationTab';
 import CycleCountsTab from './inventory/CycleCountsTab';
 import LocationsTab from './inventory/LocationsTab';
 import LotsTab from './inventory/LotsTab';
@@ -26,6 +27,7 @@ const tabs: Array<{ id: InventoryTab; label: string; icon: React.ElementType }> 
   { id: 'movements', label: 'Movements', icon: ClipboardList },
   { id: 'reorder', label: 'Reorder', icon: AlertTriangle },
   { id: 'alerts', label: 'Alerts', icon: AlertCircle },
+  { id: 'classification', label: 'Classification', icon: Sparkles },
   { id: 'reports', label: 'Reports', icon: FileBarChart2 },
 ];
 
@@ -120,6 +122,7 @@ export default function InventoryPage() {
       {activeTab === 'movements' ? <MovementsTab /> : null}
       {activeTab === 'reorder' ? <ReorderTab /> : null}
       {activeTab === 'alerts' ? <AlertsTab /> : null}
+      {activeTab === 'classification' ? <ClassificationTab /> : null}
       {activeTab === 'reports' ? <ReportsTab /> : null}
 
       <WarehouseManageModal open={warehouseModalOpen} onClose={() => setWarehouseModalOpen(false)} />

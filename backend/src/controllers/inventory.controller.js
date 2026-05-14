@@ -1121,6 +1121,33 @@ async function recallLot(req, res) {
   }
 }
 
+// ─── Tier 3 — ABC/XYZ + Dynamic ROP ──────────────────────────────────────────
+async function runClassification(req, res) {
+  const classification = require('../services/classification.service');
+  const dryRun = req.query.dryRun === 'true' || req.body?.dryRun === true;
+  const result = await classification.runClassification({
+    actorId: req.user?.id,
+    sourceIp: req.ip,
+    dryRun,
+  });
+  res.json(result);
+}
+
+async function getClassificationMatrix(_req, res) {
+  const classification = require('../services/classification.service');
+  res.json(await classification.getClassificationMatrix());
+}
+
+async function listClassifiedProducts(req, res) {
+  const classification = require('../services/classification.service');
+  const { abc, xyz, limit, offset } = req.query;
+  res.json(await classification.listClassifiedProducts({
+    abc: abc ? String(abc).toUpperCase() : undefined,
+    xyz: xyz ? String(xyz).toUpperCase() : undefined,
+    limit, offset,
+  }));
+}
+
 module.exports = {
   listWarehouses,
   getWarehouse,
@@ -1165,6 +1192,9 @@ module.exports = {
   generateReorderRecommendations,
   listSavedReorderRecommendations,
   dismissReorderRecommendation,
+  runClassification,
+  getClassificationMatrix,
+  listClassifiedProducts,
 };
 
 async function getSummary(req, res) {

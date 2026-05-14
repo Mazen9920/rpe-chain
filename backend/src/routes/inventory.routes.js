@@ -58,4 +58,9 @@ router.get('/reports/stock-snapshot', ctrl.reportStockSnapshot);
 router.get('/reports/movement-history', ctrl.reportMovementHistory);
 router.get('/reports/valuation-summary', ctrl.reportValuationSummary);
 
+// Tier 3 — ABC/XYZ + dynamic ROP
+router.post('/classification/run', requireRole('ADMIN', 'PROCUREMENT'), ctrl.runClassification);
+router.get('/classification/matrix', ctrl.getClassificationMatrix);
+router.get('/classification/products', ctrl.listClassifiedProducts);
+
 module.exports = router;

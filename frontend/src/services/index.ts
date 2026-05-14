@@ -267,6 +267,11 @@ export const inventoryService = {
   reportStockSnapshot: (params?: object) => api.get('/inventory/reports/stock-snapshot', { params }).then((r) => r.data),
   reportMovementHistory: (params?: object) => api.get('/inventory/reports/movement-history', { params }).then((r) => r.data),
   reportValuationSummary: (params?: object) => api.get('/inventory/reports/valuation-summary', { params }).then((r) => r.data),
+  runClassification: (dryRun?: boolean) =>
+    api.post('/inventory/classification/run', null, { params: dryRun ? { dryRun: 'true' } : {} }).then((r) => r.data),
+  classificationMatrix: () => api.get('/inventory/classification/matrix').then((r) => r.data),
+  classificationProducts: (params?: { abc?: string; xyz?: string; limit?: number; offset?: number }) =>
+    api.get('/inventory/classification/products', { params }).then((r) => r.data),
   downloadCsv: (path: string, params: object, filename: string) =>
     api.get(path, { params: { ...params, format: 'csv' }, responseType: 'blob' }).then((r) => {
       const url = URL.createObjectURL(new Blob([r.data as BlobPart], { type: 'text/csv' }));
