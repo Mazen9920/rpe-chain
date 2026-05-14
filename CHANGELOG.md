@@ -3,6 +3,67 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.6.0] — 2026-05-14 — Tier 4 #16 Mobile Pick/Pack + Barcode
+
+Touch-first mobile picking and packing screens with camera barcode scanning,
+delivered as new `/m/*` routes on top of a responsive `Layout` shell. Builds
+entirely on existing pick/pack endpoints and `/inventory/lookup`.
+
+### Added
+- **`useBarcodeScanner` hook** (`frontend/src/hooks/useBarcodeScanner.ts`) —
+  wraps `@zxing/browser` `BrowserMultiFormatReader`, prefers the rear camera
+  (`facingMode: 'environment'`), debounces identical scans (default 1.5 s),
+  exposes `{videoRef, start, stop, scanning, error}`. Falls back transparently
+  to keyboard-input `BarcodeInput` for hardware scanners.
+- **`MobileLayout`** (`frontend/src/components/MobileLayout.tsx`) — full-screen
+  shell with a sticky top bar (back, title, sign-out). Skips the desktop
+  sidebar entirely for mobile flows.
+- **`/m` mobile worklist** (`pages/mobile/MobileWorklistPage.tsx`) — buckets
+  sales orders by status: `ALLOCATED` → "Ready to pick", `PICKED` → "Ready
+  to pack". Large tap targets.
+- **`/m/pick/:soId`** (`MobilePickPage.tsx`) — per-line pick UI with camera
+  scanner, `BarcodeInput`, manual ±/numeric entry, line-level done indicator,
+  sticky "Confirm pick" button. Scans resolve via `/inventory/lookup`; matching
+  by `productId` increments that line's `qtyPicked` (capped at `qtyAllocated`).
+- **`/m/pack/:soId`** (`MobilePackPage.tsx`) — per-line "verify" toggles with
+  camera + keyboard scanning, sticky "Confirm pack" (calls existing pack
+  endpoint which has no per-line body).
+- **Desktop nav entry**: "Mobile Pick/Pack" link added to `Layout` sidebar.
+
+### Changed
+- **`Layout.tsx`** is now responsive — sidebar collapses to a hamburger drawer
+  below the `md` breakpoint with focus-trap-like backdrop overlay; nav links
+  auto-close the drawer on tap.
+- **`PickPayload` field correction**: `linePicks[].salesOrderLineId` →
+  `linePicks[].lineId` to match what `salesOrder.service.pickOrder` actually
+  reads. Fixed in `frontend/src/types/fulfillment.ts` and the call site in
+  `SalesOrderDetailPage.tsx`. Before this fix the backend silently fell back
+  to `qtyAllocated`; pick quantities now propagate correctly.
+- **`ShipPayload.lines[]`**: same `salesOrderLineId` → `lineId` correction for
+  type consistency (no current call sites use this field).
+
+### Dependencies
+- Added `@zxing/browser` (~80 KB minified) to `frontend/`.
+
+### RBAC
+Mobile UI uses existing endpoints. `/inventory/lookup` allows any authenticated
+role (incl. WAREHOUSE); `/sales-orders/:id/pick` & `/pack` require ADMIN,
+SALES, or WAREHOUSE.
+
+### Smoke matrix
+`backend/scripts/test-mobile.sh` — 6 assertions covering 401 on anonymous
+lookup, SKU lookup returns `type=PRODUCT`, unknown code returns 404,
+WAREHOUSE role allowed, and end-to-end pick with explicit
+`linePicks:[{lineId,qtyPicked}]` advances the SO to `PICKED` with the
+correct `qtyPicked` value on each line. Wired into `run-all-tests.sh`.
+
+### Out of scope
+- PWA manifest / install prompt.
+- Bin-level pick UI (no bin reference on `SalesOrderLine`).
+- Offline mode.
+
+Tags: `mobile-v1.0`, `v1.6.0`.
+
 ## [1.5.0] — 2026-05-14 — Tier 4 #15 Custom Reports + Scheduled Exports
 
 Saved report definitions, multi-format rendering (CSV / XLSX / PDF), and

@@ -211,9 +211,9 @@ export interface ShipPayload {
   estimatedArrival?: string;
   markInTransit?: boolean;
   notes?: string;
-  lines?: Array<{ salesOrderLineId: string; qty: number }>;
+  lines?: Array<{ lineId: string; qty: number }>;
 }
 
 export interface PickPayload {
-  linePicks: Array<{ salesOrderLineId: string; qtyPicked: number }>;
+  linePicks: Array<{ lineId: string; qtyPicked: number }>;
 }
