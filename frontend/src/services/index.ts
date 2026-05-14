@@ -749,3 +749,70 @@ export const integrationsService = {
   // Browser-navigated URL (returns 302 to provider). Use window.location.href = …
   connectUrl: (provider: IntegrationProvider) => `/api/integrations/${provider}/connect`,
 };
+
+// ─── Customer Returns (RMA) — v2.0.0 ──────────────────────────────────────────
+export type CustomerReturnStatus = 'REQUESTED' | 'APPROVED' | 'RECEIVED' | 'REFUNDED' | 'REJECTED';
+
+export interface CustomerReturnLine {
+  id: string;
+  productId: string;
+  qty: string;
+  unitPrice: string;
+  reason: string | null;
+  product?: { id: string; sku: string; name: string };
+}
+
+export interface CustomerReturn {
+  id: string;
+  returnNumber: string;
+  customerId: string;
+  customerInvoiceId: string;
+  warehouseId: string;
+  status: CustomerReturnStatus;
+  reason: string | null;
+  notes: string | null;
+  totalAmount: string;
+  currency: string;
+  creditNoteId: string | null;
+  approvedAt: string | null;
+  receivedAt: string | null;
+  refundedAt: string | null;
+  rejectedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  customer?: { id: string; code: string; name: string };
+  customerInvoice?: { id: string; invoiceNumber: string; currency: string; amount: string };
+  warehouse?: { id: string; code: string; name: string };
+  creditNote?: { id: string; invoiceNumber: string; amount: string } | null;
+  lines: CustomerReturnLine[];
+}
+
+export interface CustomerReturnListParams {
+  customerId?: string;
+  status?: CustomerReturnStatus;
+  customerInvoiceId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const customerReturnService = {
+  list: (params?: CustomerReturnListParams) =>
+    api.get<{ items: CustomerReturn[]; total: number }>('/customer-returns', { params }).then((r) => r.data),
+  getById: (id: string) =>
+    api.get<CustomerReturn>(`/customer-returns/${id}`).then((r) => r.data),
+  create: (data: {
+    customerInvoiceId: string;
+    warehouseId: string;
+    reason?: string;
+    notes?: string;
+    lines: Array<{ productId: string; qty: number; unitPrice?: number; reason?: string }>;
+  }) => api.post<CustomerReturn>('/customer-returns', data).then((r) => r.data),
+  approve: (id: string) =>
+    api.post<CustomerReturn>(`/customer-returns/${id}/approve`).then((r) => r.data),
+  reject: (id: string, reason: string) =>
+    api.post<CustomerReturn>(`/customer-returns/${id}/reject`, { reason }).then((r) => r.data),
+  receive: (id: string) =>
+    api.post<CustomerReturn>(`/customer-returns/${id}/receive`).then((r) => r.data),
+  refund: (id: string) =>
+    api.post<CustomerReturn>(`/customer-returns/${id}/refund`).then((r) => r.data),
+};

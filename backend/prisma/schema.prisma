@@ -61,6 +61,8 @@ model User {
   voidedCustomerPayments   CustomerPayment[] @relation("CustomerPaymentVoidedBy")
   createdReportDefinitions ReportDefinition[] @relation("ReportDefinitionCreatedBy")
   createdReportSchedules   ReportSchedule[]   @relation("ReportScheduleCreatedBy")
+  createdCustomerReturns   CustomerReturn[]   @relation("CustomerReturnCreatedBy")
+  approvedCustomerReturns  CustomerReturn[]   @relation("CustomerReturnApprovedBy")
 }
 
 enum Role {
@@ -161,6 +163,7 @@ model Product {
   productionOrderLines ProductionOrderLine[]
   salesOrderLines     SalesOrderLine[]
   customerInvoiceLines CustomerInvoiceLine[]
+  customerReturnLines CustomerReturnLine[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -197,6 +200,7 @@ model Warehouse {
   productionOrders ProductionOrder[]
   salesOrders    SalesOrder[]
   shipments      Shipment[]
+  customerReturns CustomerReturn[]
 }
 
 model WarehouseZone {
@@ -973,6 +977,8 @@ model CustomerInvoice {
   lines               CustomerInvoiceLine[]
   arEntries           ArLedgerEntry[]
   paymentApplications CustomerPaymentApplication[]
+  customerReturns     CustomerReturn[]
+  asReturnCreditNote  CustomerReturn? @relation("CustomerReturnCreditNote")
 
   @@unique([customerId, invoiceNumber])
   @@unique([shipmentId])
@@ -1098,6 +1104,7 @@ model Customer {
   invoices    CustomerInvoice[]
   payments    CustomerPayment[]
   arEntries   ArLedgerEntry[]
+  returns     CustomerReturn[]
 
   @@index([isActive])
 }
@@ -1672,4 +1679,65 @@ model GlIntegrationCredential {
   isActive     Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// ─── Customer Returns (RMA) ───────────────────────────────────────────────────
+
+enum CustomerReturnStatus {
+  REQUESTED
+  APPROVED
+  RECEIVED
+  REFUNDED
+  REJECTED
+}
+
+model CustomerReturn {
+  id                 String               @id @default(uuid())
+  returnNumber       String               @unique
+  customerId         String
+  customerInvoiceId  String
+  warehouseId        String
+  status             CustomerReturnStatus @default(REQUESTED)
+  reason             String?
+  notes              String?
+  totalAmount        Decimal              @default(0) @db.Decimal(14, 2)
+  currency           String               @default("USD")
+  creditNoteId      String?               @unique
+  createdById        String?
+  approvedById       String?
+  approvedAt         DateTime?
+  receivedAt         DateTime?
+  refundedAt         DateTime?
+  rejectedAt         DateTime?
+  rejectReason       String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  customer        Customer             @relation(fields: [customerId], references: [id])
+  customerInvoice CustomerInvoice      @relation(fields: [customerInvoiceId], references: [id])
+  warehouse       Warehouse            @relation(fields: [warehouseId], references: [id])
+  creditNote      CustomerInvoice?     @relation("CustomerReturnCreditNote", fields: [creditNoteId], references: [id])
+  createdBy       User?                @relation("CustomerReturnCreatedBy", fields: [createdById], references: [id])
+  approvedBy      User?                @relation("CustomerReturnApprovedBy", fields: [approvedById], references: [id])
+  lines           CustomerReturnLine[]
+
+  @@index([customerId, status])
+  @@index([customerInvoiceId])
+  @@index([status, createdAt])
+}
+
+model CustomerReturnLine {
+  id               String   @id @default(uuid())
+  customerReturnId String
+  productId        String
+  qty              Decimal  @db.Decimal(14, 4)
+  unitPrice        Decimal  @db.Decimal(14, 4)
+  reason           String?
+  createdAt        DateTime @default(now())
+
+  customerReturn CustomerReturn @relation(fields: [customerReturnId], references: [id], onDelete: Cascade)
+  product        Product        @relation(fields: [productId], references: [id])
+
+  @@index([customerReturnId])
+  @@index([productId])
 }

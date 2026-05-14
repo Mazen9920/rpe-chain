@@ -3,6 +3,62 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [2.0.0] — 2026-05-14 — Customer Returns / RMA (Track D part 2)
+
+Closes the customer-returns gap called out in the master plan. Greenfield
+feature with a clean four-step lifecycle that reuses the existing AR
+credit-note machinery for refunds and the existing stock-movement ledger for
+restocking.
+
+### Added
+- **Schema** — `CustomerReturn` + `CustomerReturnLine` models, status enum
+  `CustomerReturnStatus { REQUESTED, APPROVED, RECEIVED, REFUNDED, REJECTED }`,
+  migration `20260514125142_customer_returns`. `returnNumber` follows
+  `RMA-YYYYMM-NNNN` with monthly sequence.
+- **Service** `backend/src/services/customerReturn.service.js`:
+  - `createReturn` — clones lines from a posted `CustomerInvoice`, validates
+    each line against cumulative invoiced-minus-already-returned, computes
+    total, defaults `unitPrice` from invoice when omitted.
+  - `approveReturn` / `rejectReturn` — REQUESTED → APPROVED|REJECTED.
+  - `receiveReturn` — APPROVED → RECEIVED; emits `StockMovement` IN
+    (`reasonCode=RETURN`) per line via `stock.recordMovement` in the same
+    transaction.
+  - `refundReturn` — RECEIVED → REFUNDED; creates a `CREDIT_NOTE`
+    `CustomerInvoice` via `arInvoice.createInvoice` (signed-negative amount,
+    links back through `creditedInvoiceId`), stores the link on
+    `customerReturn.creditNoteId` (unique, prevents double-refund).
+  - Every transition appends an `EventLog` entry
+    (`CUSTOMER_RETURN_CREATED|APPROVED|REJECTED|RECEIVED|REFUNDED`).
+- **Routes** `POST/GET /api/customer-returns` + `/:id/approve|reject|receive|refund`.
+  RBAC: create = ADMIN|FINANCE|SALES; approve/reject/refund = ADMIN|FINANCE;
+  receive = ADMIN|WAREHOUSE; read = ADMIN|FINANCE|SALES|WAREHOUSE.
+- **Frontend** `customerReturnService` (services/index.ts), new
+  `CustomerReturnsPage` with status filter, list table, side-panel actions,
+  credit-note callout. Routed at `/customer-returns`, nav item added (Undo2
+  icon).
+- **Smoke test** `backend/scripts/test-returns.sh` — 13 assertions: anon 401,
+  create as SALES, RMA-number format, RBAC denies on WAREHOUSE create / SALES
+  approve, qty-exceeds-invoiced 400, approve happy-path + 409 on re-approve,
+  receive asserts stock-level delta +qty, refund creates credit note, double
+  refund 409, credit-note amount is signed-negative, reject branch. Wired into
+  `run-all-tests.sh`.
+
+### Notes
+- No `CreditNote` model — reuses `CustomerInvoice` with
+  `invoiceType='CREDIT_NOTE'`, which is the canonical AR credit-note pattern
+  already in the schema. Posts an `ArLedgerEntry` automatically via
+  `arInvoice.createInvoice`.
+- `customerReturn.creditNoteId @unique` plus the explicit
+  `if (cr.creditNoteId) throw ALREADY_REFUNDED` guard make refund idempotent at
+  both app and DB level.
+- Stock movement uses `reasonCode='RETURN'` which already maps to direction IN
+  in `stock.service.js`. `sourceDocType='CustomerReturn'` provides traceability
+  back from `StockMovement` rows.
+
+### Tags
+- `rma-v1.0` (section freeze)
+- `v2.0.0` (release)
+
 ## [1.9.0] — 2026-05-14 — `Product.volumeM3` + VOLUME landed-cost allocation
 
 Closes a latent gap: `LandedCostAllocation.allocationMethod` has accepted

@@ -24,6 +24,7 @@ import PaymentDetailPage from './pages/PaymentDetailPage';
 import AccountsReceivablePage from './pages/AccountsReceivablePage';
 import CustomerInvoiceDetailPage from './pages/CustomerInvoiceDetailPage';
 import CustomerPaymentDetailPage from './pages/CustomerPaymentDetailPage';
+import CustomerReturnsPage from './pages/CustomerReturnsPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
 import GlExportPage from './pages/GlExportPage';
@@ -67,6 +68,7 @@ export default function App() {
               <Route path="/ar" element={<AccountsReceivablePage />} />
               <Route path="/ar/invoices/:id" element={<CustomerInvoiceDetailPage />} />
               <Route path="/ar/payments/:id" element={<CustomerPaymentDetailPage />} />
+              <Route path="/customer-returns" element={<CustomerReturnsPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
               <Route path="/settings/fx" element={<FxSettingsPage />} />
