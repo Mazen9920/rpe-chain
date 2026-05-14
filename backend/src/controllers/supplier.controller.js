@@ -147,10 +147,10 @@ const uploadDoc = wrap(async (req, res) => {
 });
 
 const downloadDoc = wrap(async (req, res) => {
-  const { doc, absolutePath } = await svc.getDocument(req.params.docId);
+  const { doc, buffer } = await svc.getDocument(req.params.docId);
   res.setHeader('Content-Type', doc.mimeType);
   res.setHeader('Content-Disposition', `attachment; filename="${path.basename(doc.filename)}"`);
-  fs.createReadStream(absolutePath).pipe(res);
+  res.send(buffer);
 });
 
 const deleteDoc = wrap(async (req, res) => {

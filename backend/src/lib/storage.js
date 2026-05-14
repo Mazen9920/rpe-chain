@@ -51,11 +51,41 @@ async function getObject(key) {
   return Buffer.concat(chunks);
 }
 
+function signingKey() {
+  return process.env.STORAGE_SIGNING_KEY || process.env.JWT_SECRET || 'rpe-dev-storage-signing-key';
+}
+
+function signLocalUrl(key, expEpoch) {
+  const h = crypto.createHmac('sha256', signingKey());
+  h.update(`${key}\n${expEpoch}`);
+  return h.digest('hex');
+}
+
+function verifyLocalSig(key, expEpoch, sig) {
+  if (!key || !expEpoch || !sig) return false;
+  if (Number(expEpoch) * 1000 < Date.now()) return false;
+  const expected = signLocalUrl(key, expEpoch);
+  const a = Buffer.from(sig, 'hex');
+  const b = Buffer.from(expected, 'hex');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function localAbsPath(key) {
+  // Resolve safely under LOCAL_ROOT to prevent path traversal.
+  const full = path.resolve(LOCAL_ROOT, key);
+  if (!full.startsWith(path.resolve(LOCAL_ROOT) + path.sep) && full !== path.resolve(LOCAL_ROOT)) {
+    throw new Error('invalid storage key');
+  }
+  return full;
+}
+
 async function getSignedUrl(key, ttlSeconds = 300) {
   if (DRIVER === 'local') {
-    // Local driver: return a self-served URL via a signed-token path.
-    // For dev only — production should always use S3/MinIO.
-    return `/api/storage/local/${encodeURIComponent(key)}`;
+    // Local driver: HMAC-signed self-served URL, served by /api/storage/local/*
+    const exp = Math.floor(Date.now() / 1000) + Math.max(1, ttlSeconds);
+    const sig = signLocalUrl(key, exp);
+    return `/api/storage/local/${key.split('/').map(encodeURIComponent).join('/')}?exp=${exp}&sig=${sig}`;
   }
   const { GetObjectCommand } = require('@aws-sdk/client-s3');
   const { getSignedUrl: presign } = require('@aws-sdk/s3-request-presigner');
@@ -74,4 +104,4 @@ async function deleteObject(key) {
 
 logger.info({ driver: DRIVER, bucket: BUCKET }, 'storage initialised');
 
-module.exports = { putObject, getObject, getSignedUrl, deleteObject, DRIVER, BUCKET };
+module.exports = { putObject, getObject, getSignedUrl, deleteObject, DRIVER, BUCKET, verifyLocalSig, localAbsPath, LOCAL_ROOT };

@@ -65,6 +65,11 @@ if [ -f test-returns.sh ]; then
   SCRIPTS+=(test-returns.sh)
 fi
 
+# v2.1.0 — Storage abstraction.
+if [ -f test-storage.sh ]; then
+  SCRIPTS+=(test-storage.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""
