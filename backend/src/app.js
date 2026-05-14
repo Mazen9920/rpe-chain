@@ -32,6 +32,7 @@ const eventsRoutes = require('./routes/events.routes');
 const webhookRoutes = require('./routes/webhook.routes');
 const notificationsRoutes = require('./routes/notifications.routes');
 const settingsRoutes = require('./routes/settings.routes');
+const fxRoutes = require('./routes/fx.routes');
 
 // Bootstrap outbox handlers (self-register on require)
 require('./services/integrations/email/handler');
@@ -83,6 +84,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/fx', fxRoutes);
 
 // Health check (legacy root path kept for backward compat — prefer /api/health)
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'rpe-supply-api' }));

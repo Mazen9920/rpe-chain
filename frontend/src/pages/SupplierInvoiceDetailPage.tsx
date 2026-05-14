@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apInvoiceService } from '../services';
 import type { InvoiceStatus, MatchStatus } from '../types/ap';
+import { formatMoney } from '../utils/format';
 
 const STATUS_COLORS: Record<InvoiceStatus, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -24,8 +25,7 @@ const MATCH_COLORS: Record<MatchStatus, string> = {
   NO_RECEIPT: 'bg-rose-100 text-rose-700',
 };
 
-const fmt = (n?: number | null, cur = 'USD') =>
-  Number(n ?? 0).toLocaleString(undefined, { style: 'currency', currency: cur, maximumFractionDigits: 2 });
+const fmt = (n?: number | null, cur = 'USD') => formatMoney(n, cur);
 
 export default function SupplierInvoiceDetailPage() {
   const { id = '' } = useParams<{ id: string }>();

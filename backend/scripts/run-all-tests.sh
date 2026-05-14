@@ -31,6 +31,9 @@ fi
 if [ -f test-match-tolerances.sh ]; then
   SCRIPTS+=(test-match-tolerances.sh)
 fi
+if [ -f test-fx.sh ]; then
+  SCRIPTS+=(test-fx.sh)
+fi
 
 FAILED=()
 for s in "${SCRIPTS[@]}"; do

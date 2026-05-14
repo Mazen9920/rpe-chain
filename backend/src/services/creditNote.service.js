@@ -22,7 +22,7 @@ async function createCreditNote(data, actor, sourceIp) {
       invoiceType: 'CREDIT_NOTE',
       supplierId: credited.supplierId,
       purchaseOrderId: data.purchaseOrderId || credited.purchaseOrderId || null,
-      currency: data.currency || credited.currency || 'USD',
+      currency: data.currency || credited.currency,
     },
     actor,
     sourceIp,

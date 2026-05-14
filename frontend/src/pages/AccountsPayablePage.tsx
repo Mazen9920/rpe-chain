@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Settings, X } from 'lucide-react';
 import { apInvoiceService, paymentService, apAgingService, settingsService } from '../services';
 import type { InvoiceStatus, InvoiceType, AgingBucket } from '../types/ap';
+import { formatMoney } from '../utils/format';
 
 type Tab = 'invoices' | 'match' | 'payments' | 'aging';
 
@@ -26,10 +27,7 @@ const BUCKET_LABELS: Record<AgingBucket, string> = {
   OVER_90: '90+',
 };
 
-const fmt = (n?: number | null, cur = 'USD') => {
-  const v = Number(n ?? 0);
-  return v.toLocaleString(undefined, { style: 'currency', currency: cur, maximumFractionDigits: 2 });
-};
+const fmt = (n?: number | null, cur = 'USD') => formatMoney(n, cur);
 
 export default function AccountsPayablePage() {
   const [tab, setTab] = useState<Tab>('invoices');

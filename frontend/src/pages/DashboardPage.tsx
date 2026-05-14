@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { TrendingUp, Package, AlertTriangle, Users, ShoppingCart, Truck, Bell, Layers, Activity } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -9,6 +10,10 @@ import {
 } from 'recharts';
 import { Link } from 'react-router-dom';
 import { dashboardService, eventsService } from '../services';
+import { formatMoney } from '../utils/format';
+
+const REPORTING_CCY_KEY = 'rpe.reportingCurrency';
+const SUPPORTED_CURRENCIES = ['USD', 'EGP', 'EUR', 'GBP'];
 
 function StatCard({
   title,
@@ -71,13 +76,24 @@ type EventRow = {
 };
 
 const fmtDay = (s: string) => s.slice(5);
-const fmtMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
 export default function DashboardPage() {
-  const { data: summary, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardService.summary });
+  const [reportingCurrency, setReportingCurrency] = useState<string>(() => {
+    try { return localStorage.getItem(REPORTING_CCY_KEY) || 'USD'; } catch { return 'USD'; }
+  });
+  const changeCurrency = (v: string) => {
+    setReportingCurrency(v);
+    try { localStorage.setItem(REPORTING_CCY_KEY, v); } catch { /* ignore */ }
+  };
+  const fmtMoney = (n: number) => formatMoney(n, reportingCurrency, { maximumFractionDigits: 0 });
+
+  const { data: summary, isLoading } = useQuery({
+    queryKey: ['dashboard', reportingCurrency],
+    queryFn: () => dashboardService.summary({ reportingCurrency }),
+  });
   const { data: salesTrend } = useQuery<{ series: SalesTrendRow[] }>({
-    queryKey: ['dashboard', 'sales-trend'],
-    queryFn: () => dashboardService.salesTrend(30),
+    queryKey: ['dashboard', 'sales-trend', reportingCurrency],
+    queryFn: () => dashboardService.salesTrend(30, reportingCurrency),
   });
   const { data: invTrend } = useQuery<{ series: InvTrendRow[] }>({
     queryKey: ['dashboard', 'inventory-trend'],
@@ -99,9 +115,23 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-slate-800">Dashboard</h2>
-        <p className="text-slate-500 text-sm">RPE Chain Supply OS overview</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Dashboard</h2>
+          <p className="text-slate-500 text-sm">RPE Chain Supply OS overview</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <span>Reporting currency</span>
+          <select
+            value={reportingCurrency}
+            onChange={(e) => changeCurrency(e.target.value)}
+            className="border border-slate-200 rounded px-2 py-1 text-sm bg-white"
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -111,7 +141,7 @@ export default function DashboardPage() {
           ))
         ) : (
           <>
-            <StatCard title="Inventory Value (FIFO)" value={`$${Number(summary?.inventoryValuation ?? 0).toLocaleString()}`} icon={TrendingUp} color="green" />
+            <StatCard title="Inventory Value (FIFO)" value={formatMoney(summary?.inventoryValuation ?? 0, reportingCurrency, { maximumFractionDigits: 0 })} icon={TrendingUp} color="green" />
             <StatCard title="Active Cost Layers" value={summary?.activeCostLayers ?? 0} icon={Layers} color="purple" />
             <StatCard title="Total Products" value={summary?.totalProducts ?? 0} icon={Package} to="/inventory" />
             <StatCard title="Low Stock" value={summary?.lowStockProducts ?? 0} icon={AlertTriangle} color="orange" to="/inventory" />

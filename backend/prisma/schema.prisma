@@ -54,6 +54,7 @@ model User {
   voidedPayments     Payment[]         @relation("PaymentVoidedBy")
   createdCustomers   Customer[]        @relation("CustomerCreatedBy")
   createdSalesOrders SalesOrder[]      @relation("SalesOrderCreatedBy")
+  createdFxRates     FxRate[]
 }
 
 enum Role {
@@ -1174,6 +1175,22 @@ model AlertRule {
   enabled   Boolean  @default(true)
   params    Json     // e.g. { threshold: 0.85, days: 7 }
   updatedAt DateTime @updatedAt
+}
+
+// FX rate registry — append-only. Most-recent row per (base,quote) ≤ effectiveAt wins.
+model FxRate {
+  id             String   @id @default(uuid())
+  baseCurrency   String   // e.g. 'USD'
+  quoteCurrency  String   // e.g. 'EGP'
+  rate           Decimal  @db.Decimal(18, 8)
+  effectiveAt    DateTime
+  source         String   @default("manual") // manual | ecb | openexchangerates
+  createdAt      DateTime @default(now())
+  createdById    String?
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@index([baseCurrency, quoteCurrency, effectiveAt])
 }
 
 // ─── Audit ────────────────────────────────────────────────────────────────────

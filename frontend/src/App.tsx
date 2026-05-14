@@ -24,6 +24,7 @@ import PaymentDetailPage from './pages/PaymentDetailPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
 import NotificationSettingsPage from './pages/NotificationSettingsPage';
+import FxSettingsPage from './pages/FxSettingsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="/sales-orders/:id" element={<SalesOrderDetailPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
+              <Route path="/settings/fx" element={<FxSettingsPage />} />
               <Route path="/reports" element={<ReportsPage />} />
             </Route>
           </Route>
