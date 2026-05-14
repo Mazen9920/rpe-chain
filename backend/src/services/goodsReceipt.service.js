@@ -401,7 +401,7 @@ async function addLandedCost(grnId, input, actor, sourceIp) {
   const result = await prisma.$transaction(async (tx) => {
     const grn = await tx.goodsReceipt.findUnique({
       where: { id: grnId },
-      include: { lines: { include: { poLine: { include: { product: { select: { id: true, weightKg: true } } } } } } },
+      include: { lines: { include: { poLine: { include: { product: { select: { id: true, weightKg: true, volumeM3: true } } } } } } },
     });
     if (!grn) bad('Goods receipt not found', 404);
     if (grn.status === 'REVERSED') bad('Cannot add landed cost to a reversed receipt', 409);
@@ -415,8 +415,8 @@ async function addLandedCost(grnId, input, actor, sourceIp) {
     let basisMethod = method;
     let basis = [];
     if (basisMethod === 'VOLUME') {
-      // No volume in schema — fall back to VALUE.
-      basisMethod = 'VALUE';
+      const allHaveVolume = grn.lines.every((l) => l.poLine.product.volumeM3 != null);
+      if (!allHaveVolume) basisMethod = 'VALUE';
     }
     if (basisMethod === 'WEIGHT') {
       const allHaveWeight = grn.lines.every((l) => l.poLine.product.weightKg != null);
@@ -425,7 +425,9 @@ async function addLandedCost(grnId, input, actor, sourceIp) {
     for (const layer of layers) {
       const grLine = grn.lines.find((l) => l.lotId === layer.lotId);
       let weight = 0;
-      if (basisMethod === 'WEIGHT') {
+      if (basisMethod === 'VOLUME') {
+        weight = Number(grLine.poLine.product.volumeM3 || 0) * layer.qtyReceived;
+      } else if (basisMethod === 'WEIGHT') {
         weight = Number(grLine.poLine.product.weightKg || 0) * layer.qtyReceived;
       } else {
         // VALUE: extended cost (qty * unitCost original currency).

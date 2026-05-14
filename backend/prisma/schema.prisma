@@ -119,6 +119,7 @@ model Product {
   uom            String   @default("each") // each | box | case
   gtin           String?
   weightKg       Decimal? @db.Decimal(10, 3)
+  volumeM3       Decimal? @db.Decimal(10, 6) // v1.9.0 — enables VOLUME landed-cost allocation
   hsCode         String?
   certifications Json?    // [{ id, type: "NIOSH" | "EN149" | "EN14683" | "CE", number, issuedAt, expiresAt, documentKey? }]
   externalIds    Json?    // { shopify?: { variantId, inventoryItemId, locationId } }

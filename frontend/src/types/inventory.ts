@@ -13,6 +13,7 @@ export interface Product {
   uom: string;
   gtin?: string | null;
   weightKg?: string | number | null;
+  volumeM3?: string | number | null;
   hsCode?: string | null;
   certifications?: unknown;
   abcClass?: string | null;
@@ -186,6 +187,7 @@ export interface ProductFormInput {
   costPrice: string;
   sellingPrice: string;
   weightKg?: string | null;
+  volumeM3?: string | null;
   hsCode?: string | null;
   certifications?: unknown;
 }
