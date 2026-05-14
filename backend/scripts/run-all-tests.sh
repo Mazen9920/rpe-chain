@@ -50,6 +50,11 @@ if [ -f test-mobile.sh ]; then
   SCRIPTS+=(test-mobile.sh)
 fi
 
+# Tier 4 #17 — GL Export (QuickBooks/Xero) (added in v1.7.0).
+if [ -f test-gl.sh ]; then
+  SCRIPTS+=(test-gl.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""

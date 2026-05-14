@@ -674,3 +674,58 @@ export const reportScheduleService = {
   runNow: (id: string) =>
     api.post<{ outboxId: string; status: string }>(`/reports/schedules/${id}/run-now`).then((r) => r.data),
 };
+
+// ─── GL Export (Tier 4 #17 — v1.7.0) ───
+export type GlAccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+export interface GlAccount {
+  id: string; code: string; name: string; type: GlAccountType;
+  parentId?: string | null; isActive: boolean; description?: string | null;
+  createdAt: string; updatedAt: string;
+}
+export interface GlAccountMapping {
+  id: string; eventType: string; debitAccountId: string; creditAccountId: string;
+  description?: string | null; isActive: boolean;
+  debitAccount?: GlAccount; creditAccount?: GlAccount;
+}
+export interface GlJournalLine {
+  id: string; accountId: string; debit: string | number; credit: string | number;
+  description?: string | null; account?: GlAccount;
+}
+export interface GlJournal {
+  id: string; journalNumber: string; sourceLedger: string; sourceEntryId: string;
+  sourceEntryType: string; postedAt: string; currency: string; totalAmount: string | number;
+  description?: string | null;
+  exportedAt?: string | null; exportProvider?: string | null; externalId?: string | null;
+  lines?: GlJournalLine[];
+}
+export const glService = {
+  listAccounts: (params?: { type?: GlAccountType; isActive?: boolean }) =>
+    api.get<{ items: GlAccount[] }>('/gl/accounts', { params }).then((r) => r.data),
+  createAccount: (data: Partial<GlAccount>) =>
+    api.post<GlAccount>('/gl/accounts', data).then((r) => r.data),
+  updateAccount: (id: string, data: Partial<GlAccount>) =>
+    api.put<GlAccount>(`/gl/accounts/${id}`, data).then((r) => r.data),
+  deleteAccount: (id: string) => api.delete(`/gl/accounts/${id}`).then((r) => r.data),
+  listMappings: () =>
+    api.get<{ items: GlAccountMapping[]; validEventTypes: string[] }>('/gl/mappings').then((r) => r.data),
+  upsertMapping: (data: Partial<GlAccountMapping>) =>
+    api.put<GlAccountMapping>('/gl/mappings', data).then((r) => r.data),
+  deleteMapping: (eventType: string) =>
+    api.delete(`/gl/mappings/${eventType}`).then((r) => r.data),
+  generate: (from: string, to: string) =>
+    api.post<{ createdCount: number; skippedCount: number; errors: Array<{ ledger: string; id: string; eventType: string; reason: string }> }>(
+      '/gl/journals/generate',
+      { from, to }
+    ).then((r) => r.data),
+  listJournals: (params?: { from?: string; to?: string; exported?: boolean; limit?: number; offset?: number }) =>
+    api.get<{ total: number; items: GlJournal[] }>('/gl/journals', { params }).then((r) => r.data),
+  getJournal: (id: string) => api.get<GlJournal>(`/gl/journals/${id}`).then((r) => r.data),
+  push: (id: string, provider: 'quickbooks' | 'xero') =>
+    api.post<{ enqueued: boolean }>(`/gl/journals/${id}/push/${provider}`).then((r) => r.data),
+  exportCsvUrl: (params?: { from?: string; to?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.from) q.set('from', params.from);
+    if (params?.to) q.set('to', params.to);
+    return `/api/gl/journals/export.csv${q.toString() ? `?${q}` : ''}`;
+  },
+};
