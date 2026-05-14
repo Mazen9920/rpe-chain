@@ -729,3 +729,23 @@ export const glService = {
     return `/api/gl/journals/export.csv${q.toString() ? `?${q}` : ''}`;
   },
 };
+
+// v1.7.1 — OAuth integrations.
+export interface IntegrationStatus {
+  provider: string;
+  configured: boolean;
+  connected: boolean;
+  realmId?: string | null;
+  tenantId?: string | null;
+  expiresAt?: string | null;
+  meta?: Record<string, unknown> | null;
+}
+export type IntegrationProvider = 'quickbooks' | 'xero';
+export const integrationsService = {
+  getStatus: (provider: IntegrationProvider) =>
+    api.get<IntegrationStatus>(`/integrations/${provider}/status`).then((r) => r.data),
+  disconnect: (provider: IntegrationProvider) =>
+    api.post<{ ok: boolean }>(`/integrations/${provider}/disconnect`).then((r) => r.data),
+  // Browser-navigated URL (returns 302 to provider). Use window.location.href = …
+  connectUrl: (provider: IntegrationProvider) => `/api/integrations/${provider}/connect`,
+};
