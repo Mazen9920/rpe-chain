@@ -28,6 +28,10 @@ import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
 import NotificationSettingsPage from './pages/NotificationSettingsPage';
 import FxSettingsPage from './pages/FxSettingsPage';
+import MobileLayout from './components/MobileLayout';
+import MobileWorklistPage from './pages/mobile/MobileWorklistPage';
+import MobilePickPage from './pages/mobile/MobilePickPage';
+import MobilePackPage from './pages/mobile/MobilePackPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -66,6 +70,11 @@ export default function App() {
               <Route path="/notifications" element={<NotificationSettingsPage />} />
               <Route path="/settings/fx" element={<FxSettingsPage />} />
               <Route path="/reports" element={<ReportsPage />} />
+            </Route>
+            <Route path="/m" element={<MobileLayout />}>
+              <Route index element={<MobileWorklistPage />} />
+              <Route path="pick/:soId" element={<MobilePickPage />} />
+              <Route path="pack/:soId" element={<MobilePackPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

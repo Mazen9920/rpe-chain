@@ -45,6 +45,11 @@ if [ -f test-reports.sh ]; then
   SCRIPTS+=(test-reports.sh)
 fi
 
+# Tier 4 #16 — Mobile pick/pack + barcode (added in v1.6.0).
+if [ -f test-mobile.sh ]; then
+  SCRIPTS+=(test-mobile.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""

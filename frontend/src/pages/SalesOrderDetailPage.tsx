@@ -286,7 +286,7 @@ function PickModal({ soId, lines, onClose, onDone, onError }: { soId: string; li
   const [picks, setPicks] = useState<Record<string, number>>(() => Object.fromEntries(lines.map((l) => [l.id, l.qtyAllocated])));
   const mut = useMutation({
     mutationFn: () => {
-      const payload: PickPayload = { linePicks: lines.map((l) => ({ salesOrderLineId: l.id, qtyPicked: picks[l.id] ?? 0 })) };
+      const payload: PickPayload = { linePicks: lines.map((l) => ({ lineId: l.id, qtyPicked: picks[l.id] ?? 0 })) };
       return salesOrderService.pick(soId, payload);
     },
     onSuccess: onDone,
