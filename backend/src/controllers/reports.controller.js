@@ -253,4 +253,181 @@ const salesFulfillment = wrap(async (req, res) => {
   });
 });
 
-module.exports = { apAging, supplierScorecards, salesFulfillment };
+// ─── Demand anomalies (Tier 3) ───────────────────────────────────────────────
+// Inspect last `days` of OUT/SHIPMENT movements per product and surface SKUs
+// whose recent 7d daily mean exceeds the prior baseline mean + 2σ.
+const demandAnomalies = wrap(async (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 14), 180);
+  const since = new Date(Date.now() - days * 86400000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const movements = await prisma.stockMovement.findMany({
+    where: { createdAt: { gte: since }, reasonCode: 'SHIPMENT', direction: 'OUT' },
+    select: { productId: true, qty: true, createdAt: true },
+  });
+  if (movements.length === 0) return res.json({ days, rows: [] });
+
+  const productIds = [...new Set(movements.map((m) => m.productId))];
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { id: true, sku: true, name: true },
+  });
+  const productById = new Map(products.map((p) => [p.id, p]));
+
+  // Per product, compute recent7 and baseline (everything before recent7).
+  const cutoffRecent = Date.now() - 7 * 86400000;
+  const stats = new Map();
+  for (const m of movements) {
+    let s = stats.get(m.productId);
+    if (!s) { s = { recent: 0, recentDays: new Set(), baseline: [], baselineDayMap: new Map() }; stats.set(m.productId, s); }
+    const t = new Date(m.createdAt);
+    const dayKey = (() => { const d = new Date(t); d.setUTCHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); })();
+    if (t.getTime() >= cutoffRecent) {
+      s.recent += Math.abs(m.qty);
+      s.recentDays.add(dayKey);
+    } else {
+      s.baselineDayMap.set(dayKey, (s.baselineDayMap.get(dayKey) || 0) + Math.abs(m.qty));
+    }
+  }
+
+  const rows = [];
+  for (const [productId, s] of stats) {
+    const baselineDailyTotals = [...s.baselineDayMap.values()];
+    const baselineDayCount = Math.max(1, days - 7);
+    // Pad zero-days into baseline to keep mean honest.
+    const zeros = Math.max(0, baselineDayCount - baselineDailyTotals.length);
+    for (let i = 0; i < zeros; i += 1) baselineDailyTotals.push(0);
+    const baselineMean = baselineDailyTotals.reduce((a, b) => a + b, 0) / baselineDailyTotals.length;
+    const variance = baselineDailyTotals.reduce((a, v) => a + (v - baselineMean) ** 2, 0) / baselineDailyTotals.length;
+    const baselineStd = Math.sqrt(variance);
+    const recentMean = s.recent / 7;
+    const ratio = baselineMean > 0 ? recentMean / baselineMean : null;
+    const product = productById.get(productId);
+    if (!product) continue;
+    rows.push({
+      productId,
+      sku: product.sku,
+      name: product.name,
+      recent7dQty: s.recent,
+      recent7dDailyMean: Number(recentMean.toFixed(2)),
+      baselineDailyMean: Number(baselineMean.toFixed(2)),
+      baselineDailyStd: Number(baselineStd.toFixed(2)),
+      ratio: ratio == null ? null : Number(ratio.toFixed(2)),
+      isSpike: baselineMean >= 1 && recentMean > baselineMean + 2 * baselineStd && recentMean >= 1.5 * baselineMean,
+    });
+  }
+  rows.sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0));
+  res.json({ days, rows });
+});
+
+// ─── Margin erosion (Tier 3) ─────────────────────────────────────────────────
+// Per-product weighted-margin comparison: last 30d vs prior 60d.
+const marginErosion = wrap(async (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 90, 60), 180);
+  const cutoffWindow = new Date(Date.now() - days * 86400000);
+  const cutoffRecent = new Date(Date.now() - 30 * 86400000);
+
+  const lines = await prisma.salesOrderLine.findMany({
+    where: { salesOrder: { shippedAt: { gte: cutoffWindow } } },
+    select: {
+      productId: true, qty: true, unitPrice: true,
+      salesOrder: { select: { shippedAt: true } },
+      product: { select: { id: true, sku: true, name: true, costPrice: true } },
+    },
+  });
+
+  const buckets = new Map();
+  for (const ln of lines) {
+    if (!ln.product || ln.product.costPrice == null) continue;
+    const cost = Number(ln.product.costPrice);
+    const price = Number(ln.unitPrice);
+    const qty = Number(ln.qty);
+    if (qty <= 0 || price <= 0) continue;
+    let b = buckets.get(ln.productId);
+    if (!b) {
+      b = { product: ln.product, current: { qty: 0, revenue: 0, profit: 0, count: 0 }, baseline: { qty: 0, revenue: 0, profit: 0, count: 0 } };
+      buckets.set(ln.productId, b);
+    }
+    const tgt = new Date(ln.salesOrder.shippedAt) >= cutoffRecent ? b.current : b.baseline;
+    tgt.qty += qty;
+    tgt.revenue += qty * price;
+    tgt.profit += qty * (price - cost);
+    tgt.count += 1;
+  }
+
+  const rows = [];
+  for (const [productId, b] of buckets) {
+    const currentMargin = b.current.revenue > 0 ? b.current.profit / b.current.revenue : null;
+    const baselineMargin = b.baseline.revenue > 0 ? b.baseline.profit / b.baseline.revenue : null;
+    rows.push({
+      productId,
+      sku: b.product.sku,
+      name: b.product.name,
+      currentMarginPct: currentMargin == null ? null : Number((currentMargin * 100).toFixed(2)),
+      baselineMarginPct: baselineMargin == null ? null : Number((baselineMargin * 100).toFixed(2)),
+      dropPp: (currentMargin != null && baselineMargin != null) ? Number(((baselineMargin - currentMargin) * 100).toFixed(2)) : null,
+      last30dRevenue: Number(b.current.revenue.toFixed(2)),
+      last30dLines: b.current.count,
+    });
+  }
+  rows.sort((a, b) => (b.dropPp ?? -Infinity) - (a.dropPp ?? -Infinity));
+  res.json({ days, rows });
+});
+
+// ─── Lead time drift (Tier 3) ────────────────────────────────────────────────
+// Per-supplier realized lead time over last `days` window: last 30d vs prior.
+const leadTimeDrift = wrap(async (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 90, 60), 180);
+  const cutoffWindow = new Date(Date.now() - days * 86400000);
+  const cutoffRecent = new Date(Date.now() - 30 * 86400000);
+
+  const grns = await prisma.goodsReceipt.findMany({
+    where: { receivedAt: { gte: cutoffWindow } },
+    select: { receivedAt: true, purchaseOrder: { select: { supplierId: true, sentAt: true } } },
+  });
+
+  const bySupplier = new Map();
+  for (const g of grns) {
+    const po = g.purchaseOrder;
+    if (!po || !po.sentAt || !po.supplierId) continue;
+    const leadDays = (new Date(g.receivedAt).getTime() - new Date(po.sentAt).getTime()) / 86400000;
+    if (leadDays < 0 || leadDays > 365) continue;
+    let b = bySupplier.get(po.supplierId);
+    if (!b) { b = { recent: [], baseline: [] }; bySupplier.set(po.supplierId, b); }
+    if (new Date(g.receivedAt) >= cutoffRecent) b.recent.push(leadDays); else b.baseline.push(leadDays);
+  }
+
+  const suppliers = bySupplier.size === 0 ? [] : await prisma.supplier.findMany({
+    where: { id: { in: [...bySupplier.keys()] } },
+    select: { id: true, code: true, name: true, leadTimeDays: true },
+  });
+  const supplierById = new Map(suppliers.map((s) => [s.id, s]));
+
+  const mean = (arr) => (arr.length ? arr.reduce((a, x) => a + x, 0) / arr.length : null);
+  const std = (arr, m) => (arr.length && m != null ? Math.sqrt(arr.reduce((a, x) => a + (x - m) ** 2, 0) / arr.length) : null);
+
+  const rows = [];
+  for (const [supplierId, b] of bySupplier) {
+    const s = supplierById.get(supplierId);
+    if (!s) continue;
+    const recentMean = mean(b.recent);
+    const baselineMean = mean(b.baseline);
+    const baselineStd = std(b.baseline, baselineMean);
+    rows.push({
+      supplierId,
+      supplierCode: s.code,
+      supplierName: s.name,
+      contractedLeadTimeDays: s.leadTimeDays,
+      recent30dMeanDays: recentMean == null ? null : Number(recentMean.toFixed(2)),
+      recent30dCount: b.recent.length,
+      baselineMeanDays: baselineMean == null ? null : Number(baselineMean.toFixed(2)),
+      baselineStdDays: baselineStd == null ? null : Number(baselineStd.toFixed(2)),
+      baselineCount: b.baseline.length,
+      driftDays: (recentMean != null && baselineMean != null) ? Number((recentMean - baselineMean).toFixed(2)) : null,
+    });
+  }
+  rows.sort((a, b) => (b.driftDays ?? -Infinity) - (a.driftDays ?? -Infinity));
+  res.json({ days, rows });
+});
+
+module.exports = { apAging, supplierScorecards, salesFulfillment, demandAnomalies, marginErosion, leadTimeDrift };

@@ -21,6 +21,11 @@ if [ -f test-auth-hardening.sh ]; then
   SCRIPTS+=(test-auth-hardening.sh)
 fi
 
+# Tier 3 — anomaly alerts (added in v1.3.0).
+if [ -f test-anomaly-alerts.sh ]; then
+  SCRIPTS+=(test-anomaly-alerts.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""

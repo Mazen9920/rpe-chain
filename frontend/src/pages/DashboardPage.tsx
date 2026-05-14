@@ -59,6 +59,7 @@ function ChartCard({ title, children, action }: { title: string; children: React
 type SalesTrendRow = { date: string; revenue: number; orderCount: number };
 type InvTrendRow = { date: string; inQty: number; outQty: number; netQty: number };
 type AlertsTrendRow = { date: string; CRITICAL: number; HIGH: number; MEDIUM: number; LOW: number; total: number };
+type MarginTrendRow = { date: string; revenue: number; profit: number; marginPct: number | null };
 type EventRow = {
   id: string;
   eventType: string;
@@ -85,6 +86,10 @@ export default function DashboardPage() {
   const { data: alertsTrend } = useQuery<{ series: AlertsTrendRow[] }>({
     queryKey: ['dashboard', 'alerts-trend'],
     queryFn: () => dashboardService.alertsTrend(30),
+  });
+  const { data: marginTrend } = useQuery<{ series: MarginTrendRow[] }>({
+    queryKey: ['dashboard', 'margin-trend'],
+    queryFn: () => dashboardService.marginTrend(30),
   });
   const { data: feed } = useQuery<{ events: EventRow[] }>({
     queryKey: ['dashboard', 'events'],
@@ -148,6 +153,20 @@ export default function DashboardPage() {
               <Bar dataKey="inQty" name="IN" fill="#10b981" />
               <Bar dataKey="outQty" name="OUT" fill="#ef4444" />
             </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      <div className="grid grid-cols-1 mb-4">
+        <ChartCard title="Realized margin — last 30 days" action={<Link to="/reports" className="text-xs text-blue-600 hover:underline">Margin erosion →</Link>}>
+          <ResponsiveContainer>
+            <LineChart data={marginTrend?.series || []}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tickFormatter={fmtDay} fontSize={11} />
+              <YAxis fontSize={11} width={50} tickFormatter={(v) => `${v}%`} domain={['auto', 'auto']} />
+              <Tooltip formatter={(v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`)} />
+              <Line type="monotone" dataKey="marginPct" name="Margin %" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls />
+            </LineChart>
           </ResponsiveContainer>
         </ChartCard>
       </div>

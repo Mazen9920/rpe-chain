@@ -8,5 +8,6 @@ router.get('/summary', ctrl.summary);
 router.get('/sales-trend', ctrl.salesTrend);
 router.get('/inventory-trend', ctrl.inventoryTrend);
 router.get('/alerts-trend', ctrl.alertsTrend);
+router.get('/margin-trend', ctrl.marginTrend);
 
 module.exports = router;

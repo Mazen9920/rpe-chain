@@ -283,6 +283,7 @@ export const dashboardService = {
   salesTrend: (days = 30) => api.get('/dashboard/sales-trend', { params: { days } }).then((r) => r.data),
   inventoryTrend: (days = 30) => api.get('/dashboard/inventory-trend', { params: { days } }).then((r) => r.data),
   alertsTrend: (days = 30) => api.get('/dashboard/alerts-trend', { params: { days } }).then((r) => r.data),
+  marginTrend: (days = 30) => api.get('/dashboard/margin-trend', { params: { days } }).then((r) => r.data),
 };
 
 export const alertsService = {

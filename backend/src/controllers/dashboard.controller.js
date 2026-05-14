@@ -148,4 +148,48 @@ async function alertsTrend(req, res) {
   });
 }
 
-module.exports = { summary, salesTrend, inventoryTrend, alertsTrend };
+// ─── Margin trend ────────────────────────────────────────────────────────────
+// Per-day weighted realized margin: Σ(qty * (unitPrice - costPrice)) / Σ(qty * unitPrice).
+async function marginTrend(req, res) {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 7), 180);
+  const since = new Date(Date.now() - days * 86400000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const lines = await prisma.salesOrderLine.findMany({
+    where: { salesOrder: { shippedAt: { gte: since } } },
+    select: {
+      qty: true, unitPrice: true,
+      salesOrder: { select: { shippedAt: true } },
+      product: { select: { costPrice: true } },
+    },
+  });
+
+  const revenueByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  const profitByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  for (const ln of lines) {
+    if (!ln.product || ln.product.costPrice == null) continue;
+    const k = dateKey(ln.salesOrder.shippedAt);
+    if (revenueByDay[k] == null) continue;
+    const qty = Number(ln.qty);
+    const price = Number(ln.unitPrice);
+    const cost = Number(ln.product.costPrice);
+    if (qty <= 0 || price <= 0) continue;
+    revenueByDay[k] += qty * price;
+    profitByDay[k] += qty * (price - cost);
+  }
+  res.json({
+    days,
+    series: Object.keys(revenueByDay).map((date) => {
+      const rev = revenueByDay[date];
+      const profit = profitByDay[date];
+      return {
+        date,
+        revenue: Number(rev.toFixed(2)),
+        profit: Number(profit.toFixed(2)),
+        marginPct: rev > 0 ? Number(((profit / rev) * 100).toFixed(2)) : null,
+      };
+    }),
+  });
+}
+
+module.exports = { summary, salesTrend, inventoryTrend, alertsTrend, marginTrend };
