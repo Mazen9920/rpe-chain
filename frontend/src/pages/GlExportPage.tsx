@@ -1,9 +1,10 @@
 // GL Export page — accounts, mappings, journals tabs (Tier 4 #17 — v1.7.0).
-import { useState } from 'react';
+// v1.7.1: Integration Connect cards (QuickBooks + Xero) using OAuth2.
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, Plus, Trash2, Download, Send, RefreshCw } from 'lucide-react';
-import { glService } from '../services';
-import type { GlAccount, GlAccountType, GlJournal } from '../services';
+import { BookOpen, Plus, Trash2, Download, Send, RefreshCw, Link2, LogOut } from 'lucide-react';
+import { glService, integrationsService } from '../services';
+import type { GlAccount, GlAccountType, GlJournal, IntegrationProvider, IntegrationStatus } from '../services';
 import { formatMoney } from '../utils/format';
 
 type Tab = 'journals' | 'accounts' | 'mappings';
@@ -15,12 +16,23 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function GlExportPage() {
   const [tab, setTab] = useState<Tab>('journals');
+  // Toast on OAuth callback redirect (?connected=quickbooks|xero).
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    const conn = u.searchParams.get('connected');
+    if (conn) {
+      alert(`${conn === 'quickbooks' ? 'QuickBooks' : 'Xero'} connected.`);
+      u.searchParams.delete('connected');
+      window.history.replaceState({}, '', u.pathname + (u.search ? `?${u.searchParams}` : ''));
+    }
+  }, []);
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-2">
         <BookOpen size={22} className="text-slate-700" />
         <h1 className="text-xl font-semibold">GL Export</h1>
       </div>
+      <IntegrationsStrip />
       <div className="flex gap-1 border-b">
         {TABS.map((t) => (
           <button
@@ -69,6 +81,11 @@ function JournalsTab() {
       qc.invalidateQueries({ queryKey: ['gl', 'journals'] });
     },
   });
+
+  const qboStatus = useQuery({ queryKey: ['integration', 'quickbooks'], queryFn: () => integrationsService.getStatus('quickbooks'), refetchOnWindowFocus: true });
+  const xeroStatus = useQuery({ queryKey: ['integration', 'xero'], queryFn: () => integrationsService.getStatus('xero'), refetchOnWindowFocus: true });
+  const qboReady = !!qboStatus.data?.connected;
+  const xeroReady = !!xeroStatus.data?.connected;
 
   const items = data?.items ?? [];
 
@@ -126,13 +143,15 @@ function JournalsTab() {
                   <td className="px-3 py-2 text-xs font-mono">{j.externalId ?? '—'}</td>
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-1">
-                      <button disabled={!!j.externalId || pushMut.isPending} onClick={() => pushMut.mutate({ id: j.id, provider: 'quickbooks' })}
+                      <button title={qboReady ? 'Push to QuickBooks' : 'Connect QuickBooks first (simulated push will run otherwise)'}
+                        disabled={!!j.externalId || pushMut.isPending} onClick={() => pushMut.mutate({ id: j.id, provider: 'quickbooks' })}
                         className="text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded px-2 py-0.5 inline-flex items-center gap-1">
-                        <Send size={11} /> QB
+                        <Send size={11} /> QB{qboReady ? '' : '*'}
                       </button>
-                      <button disabled={!!j.externalId || pushMut.isPending} onClick={() => pushMut.mutate({ id: j.id, provider: 'xero' })}
+                      <button title={xeroReady ? 'Push to Xero' : 'Connect Xero first (simulated push will run otherwise)'}
+                        disabled={!!j.externalId || pushMut.isPending} onClick={() => pushMut.mutate({ id: j.id, provider: 'xero' })}
                         className="text-xs bg-cyan-600 hover:bg-cyan-700 disabled:opacity-40 text-white rounded px-2 py-0.5 inline-flex items-center gap-1">
-                        <Send size={11} /> Xero
+                        <Send size={11} /> Xero{xeroReady ? '' : '*'}
                       </button>
                     </div>
                   </td>
@@ -327,3 +346,62 @@ function MappingsTab() {
 
 // Suppress unused import lint (GlJournal kept exported for downstream consumers).
 export type { GlJournal };
+
+// ────────── v1.7.1 — Integrations strip (Connect / Disconnect cards) ──────────
+function IntegrationsStrip() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <IntegrationCard provider="quickbooks" label="QuickBooks Online" color="bg-blue-600" />
+      <IntegrationCard provider="xero" label="Xero" color="bg-cyan-600" />
+    </div>
+  );
+}
+
+function IntegrationCard({ provider, label, color }: { provider: IntegrationProvider; label: string; color: string }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery<IntegrationStatus>({
+    queryKey: ['integration', provider],
+    queryFn: () => integrationsService.getStatus(provider),
+    refetchOnWindowFocus: true,
+  });
+  const disconnectMut = useMutation({
+    mutationFn: () => integrationsService.disconnect(provider),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['integration', provider] }),
+  });
+  if (isLoading) return <div className="border rounded p-3 text-xs text-slate-500">Loading {label}…</div>;
+  const connected = !!data?.connected;
+  const configured = !!data?.configured;
+  return (
+    <div className="border rounded p-3 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className={`w-8 h-8 rounded ${color} text-white flex items-center justify-center`}>
+          <Link2 size={16} />
+        </div>
+        <div>
+          <div className="font-medium text-sm">{label}</div>
+          <div className="text-xs text-slate-500">
+            {connected
+              ? `Connected${data?.realmId || data?.tenantId ? ` · ${data.realmId || data.tenantId}` : ''}${data?.expiresAt ? ` · expires ${new Date(data.expiresAt).toLocaleString()}` : ''}`
+              : configured ? 'Not connected — click Connect to authorize.' : 'Not configured — set env vars to enable real push.'}
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        {connected ? (
+          <button onClick={() => { if (confirm(`Disconnect ${label}?`)) disconnectMut.mutate(); }}
+            disabled={disconnectMut.isPending}
+            className="text-xs border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 rounded px-3 py-1.5 inline-flex items-center gap-1">
+            <LogOut size={12} /> Disconnect
+          </button>
+        ) : (
+          <button onClick={() => { window.location.href = integrationsService.connectUrl(provider); }}
+            disabled={!configured}
+            title={configured ? '' : 'Set CLIENT_ID + CLIENT_SECRET in backend .env to enable'}
+            className={`text-xs ${color} hover:opacity-90 disabled:opacity-40 text-white rounded px-3 py-1.5 inline-flex items-center gap-1`}>
+            <Link2 size={12} /> Connect
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -3,6 +3,68 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.7.1] — 2026-05-14 — Real OAuth2 push for QuickBooks + Xero
+
+Promotes the GL Export integration from simulated stubs to real OAuth2-backed
+journal posting. Reuses the existing `GlIntegrationCredential` model (added in
+v1.7.0) for encrypted token storage, and the outbox pattern for delivery.
+Simulated path is preserved as a graceful fallback when client credentials are
+not configured, so dev/CI environments keep working with zero changes.
+
+### Added
+- **`backend/src/services/integrations/oauth.service.js`** — shared OAuth2
+  service for `quickbooks` + `xero`: authorize-URL builder (signed HS256 state
+  JWT, 300s TTL), authorization-code exchange, refresh-token rotation with
+  60-second pre-expiry buffer, encrypted token persistence (AES-256-GCM `v1:`
+  format), and structured error codes (`UNKNOWN_PROVIDER`,
+  `INTEGRATION_NOT_CONFIGURED`, `INTEGRATION_DISCONNECTED`, `INVALID_STATE`,
+  `INVALID_TOKEN_RESPONSE`). Endpoints, scopes, redirect URIs, and API bases
+  are all env-overridable (defaults: Intuit prod auth + sandbox API; Xero prod).
+- **`backend/src/services/integrations/httpClient.js`** — thin Node 24 `fetch`
+  wrapper with AbortController-based timeout (default 15s), HTTP-status-aware
+  error throwing, and structured logging (status + duration).
+- **`backend/src/controllers/integrations.controller.js`** + **`routes/integrations.routes.js`** —
+  `GET /api/integrations/:provider/connect` (302 → provider) and
+  `/:provider/status` (ADMIN/FINANCE), `GET /:provider/callback` (unauthenticated
+  — provider redirect target; on success → `${FRONTEND_ORIGIN}/gl-export?connected=…`),
+  `POST /:provider/disconnect` (ADMIN, soft-deactivates credential).
+- **Real-push handlers**: `quickbooks/handler.js` POSTs a normalised
+  `JournalEntry` (Debit/Credit lines, `AccountRef` from `meta.accountMap`) to
+  `/v3/company/{realmId}/journalentry?minorversion=65`. `xero/handler.js` POSTs
+  a `ManualJournal` (signed `LineAmount`, `Status:POSTED`, `LineAmountTypes:NoTax`)
+  to `/api.xro/2.0/ManualJournals` with `xero-tenant-id` header. Both
+  auto-refresh on 401 and retry once, then persist `externalId` via
+  `gl.markPushed`. Idempotent on `(externalId, exportProvider)`.
+- **Frontend `IntegrationsStrip`** (`GlExportPage.tsx`) — two Connect cards
+  showing live status, redirect-on-Connect, confirm-prompt Disconnect, and
+  per-provider hint asterisks on push buttons when not connected. Reads
+  `?connected=…` query param on mount for callback toast.
+- **`integrationsService`** in `frontend/src/services/index.ts` — typed
+  `getStatus`, `disconnect`, `connectUrl` helpers.
+- **`backend/scripts/test-oauth.sh`** — 10-assertion smoke covering RBAC,
+  unconfigured guard, forged-state rejection, unknown-provider 400, encrypted
+  token persistence (asserts `v1:` ciphertext prefix), end-to-end push via a
+  local stub OAuth/API server on port 4501, and disconnect.
+- **`backend/.env.example`** — new section documenting `QUICKBOOKS_*`, `XERO_*`,
+  `FRONTEND_ORIGIN`, and optional `*_AUTH_URL` / `*_TOKEN_URL` / `*_API_BASE`
+  overrides.
+
+### Changed
+- `backend/src/app.js` mounts `/api/integrations`.
+- Existing `quickbooks/handler.js` + `xero/handler.js` replaced (simulated path
+  retained as `*_SIM-*` fallback when client credentials are absent).
+
+### Security
+- All access + refresh tokens encrypted at rest via the existing
+  `lib/crypto.js` (AES-256-GCM, `sha256(JWT_SECRET)` as key, `v1:` format).
+- OAuth state is a signed HS256 JWT (5-minute TTL, payload `{u, p, n}`) — CSRF
+  prevention without server-side session storage. Forged states are rejected
+  with `INVALID_STATE` 400.
+
+### Tags
+- `oauth-v1.0` (section freeze)
+- `v1.7.1` (release)
+
 ## [1.7.0] — 2026-05-14 — Tier 4 #17 GL Export (QuickBooks / Xero)
 
 Generate balanced double-entry GL journals from AP + AR ledger entries and push
