@@ -3,6 +3,53 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [2.1.0] — 2026-05-14 — Storage abstraction (Track D part 1)
+
+Final unticked item from the post-v1.7.0 roadmap. The `lib/storage.js`
+abstraction (`local` + `s3` drivers, S3/MinIO via `@aws-sdk/client-s3`) was
+already wired into compliance docs, shipment labels, bosta labels, and product
+certificates — but supplier documents were still hardcoded to
+`backend/uploads/suppliers/…` and the local-driver `getSignedUrl()` returned an
+unsigned URL with no route to serve it. This release closes both gaps.
+
+### Added
+- **HMAC-signed local download URLs** — `lib/storage.getSignedUrl()` for the
+  `local` driver now returns
+  `/api/storage/local/<key>?exp=<epoch>&sig=<hmac-sha256>`. Signed with
+  `STORAGE_SIGNING_KEY` (falls back to `JWT_SECRET`). TTL configurable per
+  call. `verifyLocalSig` does constant-time comparison.
+- **`/api/storage/local/*` route** (new `routes/storage.routes.js`):
+  verifies signature, blocks path traversal via `localAbsPath` resolve-check,
+  returns 403 on bad/expired sig, 400 on bad key, 404 on missing file.
+- **Smoke test `backend/scripts/test-storage.sh`** — 13 assertions: upload
+  routes through abstraction (storage key, not filesystem path), file lands
+  under `STORAGE_LOCAL_ROOT`, authenticated download still works,
+  unsigned/bad-sig/traversal/expired URLs all 403, valid signed URL → 200 with
+  byte-exact content, low-level `putObject/getObject/deleteObject` round-trip.
+  Wired into `run-all-tests.sh`.
+
+### Changed
+- **`supplier.service.js`** — `uploadDocument` now writes via
+  `storage.putObject('suppliers/{id}/{uuid}-{name}', file.buffer, mimeType)`
+  and stores the key in `SupplierDocument.storagePath`. `getDocument` returns
+  `{doc, buffer}` (not `absolutePath`); legacy rows whose `storagePath` starts
+  with `uploads/` are still read directly from disk for backwards
+  compatibility. Controller `downloadDoc` streams `res.send(buffer)`.
+- **`.env.example`** documents `STORAGE_LOCAL_ROOT` and `STORAGE_SIGNING_KEY`.
+
+### Notes
+- No schema change. Existing supplier-doc rows continue to read from
+  `backend/uploads/suppliers/…`; new rows store storage keys.
+- Migrating legacy rows to S3 is now a one-shot script: read by current path,
+  `putObject` with the new key, update `storagePath`. Out of scope for this
+  release.
+- `STORAGE_DRIVER=local` remains the default — zero-config change for existing
+  deployments.
+
+### Tags
+- `storage-v1.0`
+- `v2.1.0`
+
 ## [2.0.0] — 2026-05-14 — Customer Returns / RMA (Track D part 2)
 
 Closes the customer-returns gap called out in the master plan. Greenfield

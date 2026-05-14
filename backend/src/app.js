@@ -40,6 +40,7 @@ const settingsRoutes = require('./routes/settings.routes');
 const fxRoutes = require('./routes/fx.routes');
 const glRoutes = require('./routes/gl.routes');
 const integrationsRoutes = require('./routes/integrations.routes');
+const storageRoutes = require('./routes/storage.routes');
 
 // Bootstrap outbox handlers (self-register on require)
 require('./services/integrations/email/handler');
@@ -92,6 +93,7 @@ app.use('/api/ar/payments', customerPaymentRoutes);
 app.use('/api/ar/aging', arAgingRoutes);
 app.use('/api/ar/credit-notes', arCreditNoteRoutes);
 app.use('/api/customer-returns', customerReturnRoutes);
+app.use('/api/storage', storageRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/sales-orders', salesOrderRoutes);
 app.use('/api/alerts', alertsRoutes);

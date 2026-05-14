@@ -10,13 +10,13 @@ const fsSync = require('fs');
 const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { logEvent } = require('./audit.service');
+const storage = require('../lib/storage');
 
 const APPROVAL_STATUSES = ['DRAFT', 'UNDER_REVIEW', 'APPROVED', 'PREFERRED', 'BLOCKED'];
 const PAYMENT_TERMS = ['NET15', 'NET30', 'NET45', 'NET60', 'NET90', 'COD', 'PREPAID'];
 const RISK_RATINGS = ['LOW', 'MEDIUM', 'HIGH'];
 const DOCUMENT_CATEGORIES = ['CONTRACT', 'NDA', 'ISO_CERT', 'INSURANCE', 'TAX_CERT', 'BANK_LETTER', 'OTHER'];
 const PERFORMANCE_SOURCES = ['MANUAL', 'AUTO'];
-const UPLOAD_ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'suppliers');
 
 // ─── Validation helpers ──────────────────────────────────────────────────────
 
@@ -451,23 +451,15 @@ async function listDocuments(supplierId, { category, includeExpired = true } = {
   return prisma.supplierDocument.findMany({ where, orderBy: { createdAt: 'desc' } });
 }
 
-async function ensureUploadDir(supplierId) {
-  const dir = path.join(UPLOAD_ROOT, supplierId);
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
-}
-
 async function uploadDocument(supplierId, { category, title, expiresAt, file }, actorId, sourceIp) {
   ensureEnum(category, DOCUMENT_CATEGORIES, 'category');
   if (!file) bad('file is required');
   const supplier = await prisma.supplier.findFirst({ where: { id: supplierId, deletedAt: null }, select: { id: true } });
   if (!supplier) bad('Supplier not found', 404);
 
-  const dir = await ensureUploadDir(supplierId);
   const safeName = (file.originalname || 'file').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
-  const storedName = `${crypto.randomUUID()}-${safeName}`;
-  const target = path.join(dir, storedName);
-  await fs.writeFile(target, file.buffer);
+  const key = `suppliers/${supplierId}/${crypto.randomUUID()}-${safeName}`;
+  await storage.putObject(key, file.buffer, file.mimetype || 'application/octet-stream');
 
   const row = await prisma.supplierDocument.create({
     data: {
@@ -475,7 +467,7 @@ async function uploadDocument(supplierId, { category, title, expiresAt, file }, 
       category,
       title: title || file.originalname || safeName,
       filename: file.originalname || safeName,
-      storagePath: path.relative(path.resolve(__dirname, '..', '..'), target),
+      storagePath: key,
       mimeType: file.mimetype,
       sizeBytes: file.size,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
@@ -487,7 +479,7 @@ async function uploadDocument(supplierId, { category, title, expiresAt, file }, 
     entityType: 'SupplierDocument',
     entityId: row.id,
     actorId,
-    payload: { supplierId, category, filename: row.filename, sizeBytes: row.sizeBytes },
+    payload: { supplierId, category, filename: row.filename, sizeBytes: row.sizeBytes, driver: storage.DRIVER },
     sourceIp,
   });
   return row;
@@ -496,9 +488,20 @@ async function uploadDocument(supplierId, { category, title, expiresAt, file }, 
 async function getDocument(docId) {
   const doc = await prisma.supplierDocument.findFirst({ where: { id: docId, deletedAt: null } });
   if (!doc) bad('Document not found', 404);
-  const abs = path.resolve(__dirname, '..', '..', doc.storagePath);
-  if (!fsSync.existsSync(abs)) bad('Document file missing on disk', 410);
-  return { doc, absolutePath: abs };
+  // Legacy rows stored under backend/uploads/suppliers/... — read directly from disk.
+  // New rows use storage keys like suppliers/{id}/{file}.
+  const isLegacy = doc.storagePath.startsWith('uploads/');
+  if (isLegacy) {
+    const abs = path.resolve(__dirname, '..', '..', doc.storagePath);
+    if (!fsSync.existsSync(abs)) bad('Document file missing on disk', 410);
+    return { doc, buffer: fsSync.readFileSync(abs) };
+  }
+  try {
+    const buffer = await storage.getObject(doc.storagePath);
+    return { doc, buffer };
+  } catch (err) {
+    bad(`Document file missing in storage (${err.message})`, 410);
+  }
 }
 
 async function deleteDocument(docId, actorId, sourceIp) {
