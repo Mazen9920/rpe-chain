@@ -1,10 +1,12 @@
 /**
  * Three-way match service — Section 5.
  * Compares invoice lines against PO line (unit price) and GRN line (quantity).
- * Tolerances are global constants — promote per-supplier in v1.1 if needed.
+ * Tolerances resolve per-supplier first, then global AlertRule, then hardcoded defaults.
  */
-const QTY_TOLERANCE_PCT = 2;   // ±2%
-const PRICE_TOLERANCE_PCT = 1; // ±1%
+const DEFAULT_QTY_TOLERANCE_PCT = 2;   // ±2%
+const DEFAULT_PRICE_TOLERANCE_PCT = 1; // ±1%
+const MIN_PCT = 0;
+const MAX_PCT = 20;
 
 function dec(n) { return Number(n ?? 0); }
 
@@ -12,6 +14,49 @@ function withinPct(actual, expected, pct) {
   if (Number(expected) === 0) return Number(actual) === 0;
   const diffPct = Math.abs((Number(actual) - Number(expected)) / Number(expected)) * 100;
   return diffPct <= pct;
+}
+
+/**
+ * Resolve tolerances for a supplier: per-supplier override → global AlertRule → hardcoded default.
+ * Returns { qtyPct, pricePct, source: { qty: 'supplier'|'global'|'default', price: ... } }.
+ */
+async function resolveTolerances(supplierId, tx) {
+  const client = tx || require('../lib/prisma');
+  let supplierQty = null;
+  let supplierPrice = null;
+  if (supplierId) {
+    const sup = await client.supplier.findUnique({
+      where: { id: supplierId },
+      select: { qtyTolerancePct: true, priceTolerancePct: true },
+    });
+    if (sup) {
+      supplierQty = sup.qtyTolerancePct != null ? Number(sup.qtyTolerancePct) : null;
+      supplierPrice = sup.priceTolerancePct != null ? Number(sup.priceTolerancePct) : null;
+    }
+  }
+  const rules = await client.alertRule.findMany({
+    where: { type: { in: ['MATCH_QTY_TOLERANCE_PCT', 'MATCH_PRICE_TOLERANCE_PCT'] } },
+    select: { type: true, params: true },
+  });
+  const ruleMap = {};
+  for (const r of rules) {
+    const pct = r.params && typeof r.params === 'object' ? Number(r.params.pct) : NaN;
+    if (!Number.isNaN(pct)) ruleMap[r.type] = pct;
+  }
+  const globalQty = ruleMap.MATCH_QTY_TOLERANCE_PCT;
+  const globalPrice = ruleMap.MATCH_PRICE_TOLERANCE_PCT;
+
+  const qtyPct = supplierQty != null ? supplierQty : (globalQty != null ? globalQty : DEFAULT_QTY_TOLERANCE_PCT);
+  const pricePct = supplierPrice != null ? supplierPrice : (globalPrice != null ? globalPrice : DEFAULT_PRICE_TOLERANCE_PCT);
+
+  return {
+    qtyPct,
+    pricePct,
+    source: {
+      qty: supplierQty != null ? 'supplier' : (globalQty != null ? 'global' : 'default'),
+      price: supplierPrice != null ? 'supplier' : (globalPrice != null ? 'global' : 'default'),
+    },
+  };
 }
 
 /**
@@ -37,6 +82,8 @@ async function match(invoiceId, tx) {
     throw err;
   }
 
+  const tolerances = await resolveTolerances(invoice.supplierId, tx);
+
   const lineStatuses = [];
   let matchedAmount = 0;
   let varianceAmount = 0;
@@ -58,14 +105,14 @@ async function match(invoiceId, tx) {
       const poQty = dec(line.poLine?.qtyOrdered);
 
       priceVariance = invUnit - poUnit;
-      const priceOk = withinPct(invUnit, poUnit, PRICE_TOLERANCE_PCT);
+      const priceOk = withinPct(invUnit, poUnit, tolerances.pricePct);
 
       if (grnQty === null) {
         matchStatus = 'NO_RECEIPT';
         qtyVariance = invQty - poQty;
       } else {
         qtyVariance = invQty - grnQty;
-        const qtyOk = withinPct(invQty, grnQty, QTY_TOLERANCE_PCT);
+        const qtyOk = withinPct(invQty, grnQty, tolerances.qtyPct);
         if (qtyOk && priceOk) matchStatus = 'MATCHED';
         else if (!qtyOk && priceOk) matchStatus = 'QTY_VARIANCE';
         else if (qtyOk && !priceOk) matchStatus = 'PRICE_VARIANCE';
@@ -98,7 +145,17 @@ async function match(invoiceId, tx) {
     },
   });
 
-  return { status: newStatus, lineStatuses, matchedAmount, varianceAmount };
+  return { status: newStatus, lineStatuses, matchedAmount, varianceAmount, tolerances };
 }
 
-module.exports = { match, QTY_TOLERANCE_PCT, PRICE_TOLERANCE_PCT };
+module.exports = {
+  match,
+  resolveTolerances,
+  DEFAULT_QTY_TOLERANCE_PCT,
+  DEFAULT_PRICE_TOLERANCE_PCT,
+  MIN_PCT,
+  MAX_PCT,
+  // Backwards-compat aliases (used by some legacy callsites)
+  QTY_TOLERANCE_PCT: DEFAULT_QTY_TOLERANCE_PCT,
+  PRICE_TOLERANCE_PCT: DEFAULT_PRICE_TOLERANCE_PCT,
+};

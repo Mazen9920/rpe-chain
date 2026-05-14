@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Package, Users, ShoppingCart, Truck, Factory, LogOut, PackageCheck, Receipt, UserCheck, ClipboardList, Bell, BarChart3, Mail } from 'lucide-react';
+import { LayoutDashboard, Package, Users, ShoppingCart, Truck, Factory, LogOut, PackageCheck, Receipt, UserCheck, ClipboardList, Bell, BarChart3, Mail, DollarSign } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import AlertsBell from './AlertsBell';
 import api from '../lib/api';
@@ -18,6 +18,7 @@ const navItems = [
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/notifications', icon: Mail, label: 'Notifications' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
+  { to: '/settings/fx', icon: DollarSign, label: 'FX Rates' },
 ];
 
 export default function Layout() {

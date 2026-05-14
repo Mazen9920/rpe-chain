@@ -171,7 +171,11 @@ async function createInvoice(data, actor, sourceIp) {
         subtotal: sign * subtotal,
         taxAmount: sign * dec(taxAmount),
         amount: sign * total,
-        currency: currency || supplier.currency || 'USD',
+        currency: (() => {
+          const c = currency || supplier.currency;
+          if (!c) bad('currency required (no supplier default)', 400, 'CURRENCY_REQUIRED');
+          return String(c).toUpperCase();
+        })(),
         fxRate: fxRate ?? null,
         status: 'DRAFT',
         notes: notes || null,

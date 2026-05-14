@@ -79,6 +79,14 @@ async function recordPayment(data, actor, sourceIp) {
   const invoiceIds = applications.map((a) => a.invoiceId);
   const invoices = await prisma.supplierInvoice.findMany({ where: { id: { in: invoiceIds } } });
   const map = new Map(invoices.map((i) => [i.id, i]));
+  const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { currency: true } });
+  const resolvedCurrency = String(currency || invoices[0]?.currency || supplier?.currency || '').toUpperCase();
+  if (!resolvedCurrency) bad('currency required', 400, 'CURRENCY_REQUIRED');
+  // If any application invoice is in a different currency, fxRate is required.
+  const needsFx = invoices.some((i) => (i.currency || '').toUpperCase() !== resolvedCurrency);
+  if (needsFx && (fxRate == null || Number(fxRate) <= 0)) {
+    bad('fxRate required for cross-currency payment', 400, 'FX_RATE_REQUIRED');
+  }
   for (const app of applications) {
     const inv = map.get(app.invoiceId);
     if (!inv) bad(`Invoice ${app.invoiceId} not found`, 404);
@@ -98,7 +106,7 @@ async function recordPayment(data, actor, sourceIp) {
       data: {
         supplierId,
         amount: dec(amount),
-        currency: currency || invoices[0]?.currency || 'USD',
+        currency: resolvedCurrency,
         fxRate: fxRate ?? null,
         paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
         method,

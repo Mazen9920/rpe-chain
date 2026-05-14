@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Download, FileText, Users, ShoppingBag } from 'lucide-react';
 import { reportsService } from '../services';
+import { formatMoney } from '../utils/format';
 
 type Tab = 'ap-aging' | 'supplier-scorecards' | 'sales-fulfillment';
 
@@ -12,7 +13,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 ];
 
 const money = (n: number | null | undefined, ccy?: string) =>
-  n == null ? '—' : `${ccy ? ccy + ' ' : '$'}${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  n == null ? '—' : formatMoney(n, ccy || 'USD');
 const pct = (n: number | null | undefined) => (n == null ? '—' : `${(Number(n) * 100).toFixed(1)}%`);
 const bucketColor: Record<string, string> = {
   CURRENT: 'bg-emerald-50 text-emerald-700',

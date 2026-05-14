@@ -267,6 +267,11 @@ export const inventoryService = {
   reportStockSnapshot: (params?: object) => api.get('/inventory/reports/stock-snapshot', { params }).then((r) => r.data),
   reportMovementHistory: (params?: object) => api.get('/inventory/reports/movement-history', { params }).then((r) => r.data),
   reportValuationSummary: (params?: object) => api.get('/inventory/reports/valuation-summary', { params }).then((r) => r.data),
+  runClassification: (dryRun?: boolean) =>
+    api.post('/inventory/classification/run', null, { params: dryRun ? { dryRun: 'true' } : {} }).then((r) => r.data),
+  classificationMatrix: () => api.get('/inventory/classification/matrix').then((r) => r.data),
+  classificationProducts: (params?: { abc?: string; xyz?: string; limit?: number; offset?: number }) =>
+    api.get('/inventory/classification/products', { params }).then((r) => r.data),
   downloadCsv: (path: string, params: object, filename: string) =>
     api.get(path, { params: { ...params, format: 'csv' }, responseType: 'blob' }).then((r) => {
       const url = URL.createObjectURL(new Blob([r.data as BlobPart], { type: 'text/csv' }));
@@ -279,10 +284,21 @@ export const inventoryService = {
 };
 
 export const dashboardService = {
-  summary: () => api.get('/dashboard/summary').then((r) => r.data),
-  salesTrend: (days = 30) => api.get('/dashboard/sales-trend', { params: { days } }).then((r) => r.data),
+  summary: (params?: { reportingCurrency?: string }) => api.get('/dashboard/summary', { params }).then((r) => r.data),
+  salesTrend: (days = 30, reportingCurrency?: string) =>
+    api.get('/dashboard/sales-trend', { params: { days, reportingCurrency } }).then((r) => r.data),
   inventoryTrend: (days = 30) => api.get('/dashboard/inventory-trend', { params: { days } }).then((r) => r.data),
   alertsTrend: (days = 30) => api.get('/dashboard/alerts-trend', { params: { days } }).then((r) => r.data),
+  marginTrend: (days = 30) => api.get('/dashboard/margin-trend', { params: { days } }).then((r) => r.data),
+};
+
+export const fxService = {
+  list: (params?: { base?: string; quote?: string; limit?: number }) =>
+    api.get('/fx/rates', { params }).then((r) => r.data),
+  record: (body: { baseCurrency: string; quoteCurrency: string; rate: number; effectiveAt: string; source?: string }) =>
+    api.post('/fx/rates', body).then((r) => r.data),
+  convert: (params: { amount: number; from: string; to: string; at?: string }) =>
+    api.get('/fx/convert', { params }).then((r) => r.data),
 };
 
 export const alertsService = {
@@ -434,7 +450,7 @@ export const paymentService = {
 export const apAgingService = {
   aging: (params?: { supplierId?: string; asOf?: string }) =>
     api.get<{ asOf: string; rows: AgingRow[] }>('/ap/aging', { params }).then((r) => r.data),
-  summary: (params?: { supplierId?: string; asOf?: string }) =>
+  summary: (params?: { supplierId?: string; asOf?: string; reportingCurrency?: string }) =>
     api.get<AgingSummary>('/ap/aging/summary', { params }).then((r) => r.data),
   statement: (supplierId: string, asOf?: string) =>
     api.get<SupplierStatement>(`/ap/aging/statement/${supplierId}`, { params: { asOf } }).then((r) => r.data),
@@ -451,4 +467,12 @@ export const creditNoteService = {
     notes?: string;
     lines: Array<{ description?: string; quantity: number; unitPrice: number; poLineId?: string; grnLineId?: string }>;
   }) => api.post<SupplierInvoice>('/ap/credit-notes', data).then((r) => r.data),
+};
+
+export const settingsService = {
+  getMatchTolerances: () => api.get('/settings/match-tolerances').then((r) => r.data),
+  updateGlobalMatchTolerances: (body: { qtyPct?: number; pricePct?: number }) =>
+    api.put('/settings/match-tolerances/global', body).then((r) => r.data),
+  updateSupplierMatchTolerances: (id: string, body: { qtyPct?: number | null; pricePct?: number | null }) =>
+    api.put(`/settings/match-tolerances/suppliers/${id}`, body).then((r) => r.data),
 };

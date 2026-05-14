@@ -194,7 +194,11 @@ async function createPO(data, actor, sourceIp) {
     data: {
       poNumber: data.poNumber || genPoNumber(),
       supplierId: data.supplierId,
-      currency: data.currency || supplier.currency || 'USD',
+      currency: (() => {
+        const c = data.currency || supplier.currency;
+        if (!c) bad('currency required (no supplier default)', 400, 'CURRENCY_REQUIRED');
+        return String(c).toUpperCase();
+      })(),
       expectedDate: data.expectedDate ? new Date(data.expectedDate) : null,
       notes: data.notes || null,
       requestedById: data.requestedById || actor.id,

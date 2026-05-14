@@ -3,6 +3,7 @@
  * Aging is always computed on read; ApLedgerEntry.agingBucket snapshots are advisory only.
  */
 const prisma = require('../lib/prisma');
+const fx = require('./fx.service');
 
 const BUCKETS = ['CURRENT', '1_30', '31_60', '61_90', 'OVER_90'];
 
@@ -31,7 +32,7 @@ async function openInvoices(supplierId, asOf) {
     const balance = dec(i.amount) - dec(i.paidAmount);
     const bucket = bucketFor(i.dueDate, asOf);
     const daysOverdue = Math.max(0, Math.floor((new Date(asOf).getTime() - new Date(i.dueDate).getTime()) / 86400000));
-    return { ...i, openBalance: balance, agingBucket: bucket, daysOverdue };
+    return { ...i, openBalance: balance, agingBucket: bucket, daysOverdue, currency: i.currency || 'USD' };
   });
 }
 
@@ -41,12 +42,20 @@ async function aging({ supplierId, asOf } = {}) {
   return { asOf: asOfDate, rows };
 }
 
-async function agingSummary({ supplierId, asOf } = {}) {
+async function agingSummary({ supplierId, asOf, reportingCurrency } = {}) {
   const asOfDate = asOf ? new Date(asOf) : new Date();
+  const repCcy = String(reportingCurrency || 'USD').toUpperCase();
   const rows = await openInvoices(supplierId, asOfDate);
   const bySupplier = new Map();
+  const byCurrency = {};
   const totals = { CURRENT: 0, '1_30': 0, '31_60': 0, '61_90': 0, OVER_90: 0, total: 0 };
   for (const r of rows) {
+    const ccy = (r.currency || 'USD').toUpperCase();
+    let converted = r.openBalance;
+    if (ccy !== repCcy) {
+      try { converted = await fx.convert(r.openBalance, ccy, repCcy, asOfDate); }
+      catch (_e) { /* keep raw if FX missing */ }
+    }
     if (!bySupplier.has(r.supplierId)) {
       bySupplier.set(r.supplierId, {
         supplierId: r.supplierId,
@@ -56,16 +65,21 @@ async function agingSummary({ supplierId, asOf } = {}) {
       });
     }
     const row = bySupplier.get(r.supplierId);
-    row[r.agingBucket] += r.openBalance;
-    row.total += r.openBalance;
-    totals[r.agingBucket] += r.openBalance;
-    totals.total += r.openBalance;
+    row[r.agingBucket] += converted;
+    row.total += converted;
+    totals[r.agingBucket] += converted;
+    totals.total += converted;
+    if (!byCurrency[ccy]) byCurrency[ccy] = { CURRENT: 0, '1_30': 0, '31_60': 0, '61_90': 0, OVER_90: 0, total: 0 };
+    byCurrency[ccy][r.agingBucket] += r.openBalance;
+    byCurrency[ccy].total += r.openBalance;
   }
   return {
     asOf: asOfDate,
+    reportingCurrency: repCcy,
     buckets: BUCKETS,
     suppliers: Array.from(bySupplier.values()).sort((a, b) => b.total - a.total),
     totals,
+    byCurrency,
   };
 }
 

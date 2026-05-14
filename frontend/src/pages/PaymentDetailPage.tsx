@@ -2,9 +2,9 @@ import { useParams, Link } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { paymentService } from '../services';
+import { formatMoney } from '../utils/format';
 
-const fmt = (n?: number | null, cur = 'USD') =>
-  Number(n ?? 0).toLocaleString(undefined, { style: 'currency', currency: cur, maximumFractionDigits: 2 });
+const fmt = (n?: number | null, cur = 'USD') => formatMoney(n, cur);
 
 export default function PaymentDetailPage() {
   const { id = '' } = useParams<{ id: string }>();

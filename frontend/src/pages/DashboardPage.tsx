@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { TrendingUp, Package, AlertTriangle, Users, ShoppingCart, Truck, Bell, Layers, Activity } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -9,6 +10,10 @@ import {
 } from 'recharts';
 import { Link } from 'react-router-dom';
 import { dashboardService, eventsService } from '../services';
+import { formatMoney } from '../utils/format';
+
+const REPORTING_CCY_KEY = 'rpe.reportingCurrency';
+const SUPPORTED_CURRENCIES = ['USD', 'EGP', 'EUR', 'GBP'];
 
 function StatCard({
   title,
@@ -59,6 +64,7 @@ function ChartCard({ title, children, action }: { title: string; children: React
 type SalesTrendRow = { date: string; revenue: number; orderCount: number };
 type InvTrendRow = { date: string; inQty: number; outQty: number; netQty: number };
 type AlertsTrendRow = { date: string; CRITICAL: number; HIGH: number; MEDIUM: number; LOW: number; total: number };
+type MarginTrendRow = { date: string; revenue: number; profit: number; marginPct: number | null };
 type EventRow = {
   id: string;
   eventType: string;
@@ -70,13 +76,24 @@ type EventRow = {
 };
 
 const fmtDay = (s: string) => s.slice(5);
-const fmtMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
 export default function DashboardPage() {
-  const { data: summary, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardService.summary });
+  const [reportingCurrency, setReportingCurrency] = useState<string>(() => {
+    try { return localStorage.getItem(REPORTING_CCY_KEY) || 'USD'; } catch { return 'USD'; }
+  });
+  const changeCurrency = (v: string) => {
+    setReportingCurrency(v);
+    try { localStorage.setItem(REPORTING_CCY_KEY, v); } catch { /* ignore */ }
+  };
+  const fmtMoney = (n: number) => formatMoney(n, reportingCurrency, { maximumFractionDigits: 0 });
+
+  const { data: summary, isLoading } = useQuery({
+    queryKey: ['dashboard', reportingCurrency],
+    queryFn: () => dashboardService.summary({ reportingCurrency }),
+  });
   const { data: salesTrend } = useQuery<{ series: SalesTrendRow[] }>({
-    queryKey: ['dashboard', 'sales-trend'],
-    queryFn: () => dashboardService.salesTrend(30),
+    queryKey: ['dashboard', 'sales-trend', reportingCurrency],
+    queryFn: () => dashboardService.salesTrend(30, reportingCurrency),
   });
   const { data: invTrend } = useQuery<{ series: InvTrendRow[] }>({
     queryKey: ['dashboard', 'inventory-trend'],
@@ -86,6 +103,10 @@ export default function DashboardPage() {
     queryKey: ['dashboard', 'alerts-trend'],
     queryFn: () => dashboardService.alertsTrend(30),
   });
+  const { data: marginTrend } = useQuery<{ series: MarginTrendRow[] }>({
+    queryKey: ['dashboard', 'margin-trend'],
+    queryFn: () => dashboardService.marginTrend(30),
+  });
   const { data: feed } = useQuery<{ events: EventRow[] }>({
     queryKey: ['dashboard', 'events'],
     queryFn: () => eventsService.list({ limit: 20 }),
@@ -94,9 +115,23 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-slate-800">Dashboard</h2>
-        <p className="text-slate-500 text-sm">RPE Chain Supply OS overview</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Dashboard</h2>
+          <p className="text-slate-500 text-sm">RPE Chain Supply OS overview</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <span>Reporting currency</span>
+          <select
+            value={reportingCurrency}
+            onChange={(e) => changeCurrency(e.target.value)}
+            className="border border-slate-200 rounded px-2 py-1 text-sm bg-white"
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -106,7 +141,7 @@ export default function DashboardPage() {
           ))
         ) : (
           <>
-            <StatCard title="Inventory Value (FIFO)" value={`$${Number(summary?.inventoryValuation ?? 0).toLocaleString()}`} icon={TrendingUp} color="green" />
+            <StatCard title="Inventory Value (FIFO)" value={formatMoney(summary?.inventoryValuation ?? 0, reportingCurrency, { maximumFractionDigits: 0 })} icon={TrendingUp} color="green" />
             <StatCard title="Active Cost Layers" value={summary?.activeCostLayers ?? 0} icon={Layers} color="purple" />
             <StatCard title="Total Products" value={summary?.totalProducts ?? 0} icon={Package} to="/inventory" />
             <StatCard title="Low Stock" value={summary?.lowStockProducts ?? 0} icon={AlertTriangle} color="orange" to="/inventory" />
@@ -148,6 +183,20 @@ export default function DashboardPage() {
               <Bar dataKey="inQty" name="IN" fill="#10b981" />
               <Bar dataKey="outQty" name="OUT" fill="#ef4444" />
             </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      <div className="grid grid-cols-1 mb-4">
+        <ChartCard title="Realized margin — last 30 days" action={<Link to="/reports" className="text-xs text-blue-600 hover:underline">Margin erosion →</Link>}>
+          <ResponsiveContainer>
+            <LineChart data={marginTrend?.series || []}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tickFormatter={fmtDay} fontSize={11} />
+              <YAxis fontSize={11} width={50} tickFormatter={(v) => `${v}%`} domain={['auto', 'auto']} />
+              <Tooltip formatter={(v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`)} />
+              <Line type="monotone" dataKey="marginPct" name="Margin %" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls />
+            </LineChart>
           </ResponsiveContainer>
         </ChartCard>
       </div>

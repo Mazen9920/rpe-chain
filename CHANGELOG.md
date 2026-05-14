@@ -3,6 +3,72 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.3.0] — 2026-05-14 — Tier 3 intelligence (Sections 11–14)
+
+Intelligence sprint on top of v1.2.0. Closes the operational loop with
+anomaly-driven alerts, ABC/XYZ classification + dynamic reorder points,
+tolerance-banded 3-way match with EXCEPTION workflow, and a multi-currency
+hardening pass that turns FX into a first-class concern.
+
+### Added
+- **Phase A — Anomaly alerts (Section 11)**: rolling-window detector emits
+  `MARGIN_EROSION`, `PRICE_SPIKE`, `STOCKOUT_RISK`, `OVERSTOCK`, and
+  `DEMAND_SPIKE` alerts with severity scoring. New `AlertRule` registry with
+  per-type `enabled`/`params` toggles (admin-only). `POST /alerts/scan`
+  triggers a manual sweep; scheduler runs hourly. Dashboard alerts trend
+  chart over 30 days.
+- **Phase B — ABC/XYZ + dynamic ROP (Section 12)**: monthly classification
+  job tags every product with `abcClass ∈ {A,B,C}` (revenue Pareto) and
+  `xyzClass ∈ {X,Y,Z}` (demand-variability via coefficient of variation).
+  Dynamic reorder point computed from rolling demand × lead-time + safety
+  stock z-score scaled by XYZ class. Manual recompute via
+  `POST /classification/recompute`. Inventory list surfaces ABC/XYZ badges
+  and the dynamic vs. static ROP delta.
+- **Phase C — 3-way-match tolerance bands (Section 13)**: per-supplier
+  `qtyPct`/`pricePct` overrides on top of admin-managed globals (default
+  2%/1%, bounds 0–20%). Match engine honours band on PO line vs. GRN qty
+  and PO unit price vs. invoice price; out-of-band match flips invoice to
+  `EXCEPTION` and emits a `MATCH_EXCEPTION` alert (severity by deviation).
+  Settings UI under `/settings` (admin-only edit, finance read-only).
+  `POST /alerts/scan` extended to report match-exception counts.
+- **Phase D — Multi-currency hardening (Section 14)**: FxRate registry
+  (manual entry today, source field forward-compatible with live feeds)
+  with history-aware lookup (direct → inverse → USD pivot). Dashboard
+  summary + sales-trend + AP-aging summary accept `?reportingCurrency`
+  and convert on-the-fly using the FX engine; AP aging additionally
+  exposes a `byCurrency` breakdown of native balances. Silent
+  `|| 'USD'` fallbacks stripped at money-document creation
+  (PO/Invoice/CreditNote/Payment): missing currency now returns
+  `400 CURRENCY_REQUIRED`. Cross-currency payment application without
+  `fxRate` returns `400 FX_RATE_REQUIRED`. New admin page
+  `/settings/fx` for rate management and a `formatMoney/Number/Percent`
+  utility that replaces five ad-hoc formatters across the frontend.
+
+### Changed
+- Dashboard StatCards and trend charts now render values in the selected
+  reporting currency; the dropdown persists in `localStorage`.
+- AP Aging summary response shape extended (`reportingCurrency`,
+  `byCurrency`) — additive, existing fields preserved.
+- AlertRule rows seeded for the five new anomaly types and the
+  `MATCH_EXCEPTION` channel.
+
+### Migrations
+- `20260514_anomaly_alert_rules` — AlertRule seed for anomaly types.
+- `20260514_abc_xyz` — `Product.abcClass`/`xyzClass`/`dynamicROP`.
+- `20260514_match_tolerances` — `Supplier.matchQtyPct`/`matchPricePct`
+  + Settings row for globals.
+- `20260514101959_fx_rates` — FxRate table + index
+  `(baseCurrency, quoteCurrency, effectiveAt)`.
+
+### Smoke matrix
+12 backend smoke scripts pass end-to-end:
+`test-foundations.sh`, `test-auth-hardening.sh`, `test-suppliers.sh`,
+`test-procurement.sh`, `test-manufacturing.sh`, `test-fulfillment.sh`,
+`test-ap.sh`, `test-shopify.sh`, `test-bosta.sh`,
+`test-anomaly-alerts.sh`, `test-classification.sh`,
+`test-match-tolerances.sh`, `test-fx.sh`. Frontend `tsc --noEmit` and
+`vite build` both clean.
+
 ## [1.2.0] — 2026-05-13 — Tier 2 integrations (Section 9)
 
 External-system connectivity sprint on top of v1.1.0. Adds the integration

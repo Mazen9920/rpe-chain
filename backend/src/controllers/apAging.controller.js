@@ -9,7 +9,7 @@ const aging = wrap(async (req, res) => {
 });
 
 const summary = wrap(async (req, res) => {
-  res.json(await svc.agingSummary({ supplierId: req.query.supplierId, asOf: req.query.asOf }));
+  res.json(await svc.agingSummary({ supplierId: req.query.supplierId, asOf: req.query.asOf, reportingCurrency: req.query.reportingCurrency }));
 });
 
 const statement = wrap(async (req, res) => {

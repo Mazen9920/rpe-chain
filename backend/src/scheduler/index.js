@@ -93,6 +93,20 @@ async function runDailyDigest() {
   }
 }
 
+async function runWeeklyClassification() {
+  const prisma = require('../lib/prisma');
+  const classification = require('../services/classification.service');
+  const startedAt = Date.now();
+  try {
+    const result = await classification.runClassification({ actorId: null });
+    console.log(`[scheduler] weekly classification: ${JSON.stringify(result)} in ${Date.now() - startedAt}ms`);
+    await logEvent(prisma, 'SCHEDULER_WEEKLY_CLASSIFICATION', { result, durationMs: Date.now() - startedAt });
+  } catch (e) {
+    console.error('[scheduler] weekly classification failed:', e.message);
+    await logEvent(prisma, 'SCHEDULER_WEEKLY_CLASSIFICATION_FAILED', { error: e.message });
+  }
+}
+
 function start() {
   if (process.env.DISABLE_SCHEDULER === 'true') {
     console.log('[scheduler] disabled via DISABLE_SCHEDULER=true');
@@ -113,6 +127,9 @@ function start() {
   // Daily 07:00 UTC — alert digest email
   jobs.push(cron.schedule('0 7 * * *', runDailyDigest, { scheduled: true }));
 
+  // Sunday 03:00 UTC — ABC/XYZ classification + dynamic ROP refresh
+  jobs.push(cron.schedule('0 3 * * 0', runWeeklyClassification, { scheduled: true }));
+
   console.log('[scheduler] armed — */15min inventory scan + */1min outbox + daily 02:00 cross-module pass + 07:00 digest');
 
   if (process.env.RUN_DAILY_ON_BOOT === 'true') {
@@ -128,4 +145,4 @@ function stop() {
   console.log('[scheduler] stopped');
 }
 
-module.exports = { start, stop, runInventoryAlertScan, runDailyPass, runOutboxPass, runDailyDigest };
+module.exports = { start, stop, runInventoryAlertScan, runDailyPass, runOutboxPass, runDailyDigest, runWeeklyClassification };

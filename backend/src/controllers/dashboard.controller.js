@@ -1,7 +1,14 @@
 const prisma = require('../lib/prisma');
 const { getInventoryValuation } = require('../services/fifo.service');
+const fx = require('../services/fx.service');
 
-async function summary(_req, res) {
+function normalizeCurrency(v) {
+  const s = String(v || 'USD').toUpperCase();
+  return /^[A-Z]{3}$/.test(s) ? s : 'USD';
+}
+
+async function summary(req, res) {
+  const reportingCurrency = normalizeCurrency(req.query?.reportingCurrency);
   const [
     totalProducts,
     totalSuppliers,
@@ -41,6 +48,16 @@ async function summary(_req, res) {
       ),
   ]);
 
+  // Inventory valuation comes back in USD (fifo functionalUnitCost). Convert to reporting.
+  let inventoryValuation = Number(valuation.totalValue || 0);
+  try {
+    if (reportingCurrency !== 'USD') {
+      inventoryValuation = await fx.convert(inventoryValuation, 'USD', reportingCurrency);
+    }
+  } catch (_e) {
+    // If FX missing, fall back to USD value and surface currency.
+  }
+
   res.json({
     totalProducts,
     lowStockProducts: lowStockCount,
@@ -48,7 +65,9 @@ async function summary(_req, res) {
     pendingPOs,
     activeShipments,
     openAlerts,
-    inventoryValuation: valuation.totalValue,
+    inventoryValuation,
+    inventoryValuationCurrency: reportingCurrency,
+    reportingCurrency,
     activeCostLayers: valuation.layerCount,
     recentMovements,
   });
@@ -73,24 +92,34 @@ function dateKey(d) {
 
 async function salesTrend(req, res) {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 7), 180);
+  const reportingCurrency = normalizeCurrency(req.query.reportingCurrency);
   const since = new Date(Date.now() - days * 86400000);
   since.setUTCHours(0, 0, 0, 0);
 
   const orders = await prisma.salesOrder.findMany({
     where: { orderedAt: { gte: since } },
-    select: { orderedAt: true, totalAmount: true, status: true },
+    select: { orderedAt: true, totalAmount: true, status: true, currency: true },
   });
   const revenueByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
   const countByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
   for (const o of orders) {
     const k = dateKey(o.orderedAt);
-    if (revenueByDay[k] != null) {
-      revenueByDay[k] += Number(o.totalAmount);
-      countByDay[k] += 1;
+    if (revenueByDay[k] == null) continue;
+    let amt = Number(o.totalAmount);
+    const oc = normalizeCurrency(o.currency);
+    if (oc !== reportingCurrency) {
+      try {
+        amt = await fx.convert(amt, oc, reportingCurrency, o.orderedAt);
+      } catch (_e) {
+        // Skip silently — keep original amount; UI surfaces partial data.
+      }
     }
+    revenueByDay[k] += amt;
+    countByDay[k] += 1;
   }
   res.json({
     days,
+    reportingCurrency,
     series: Object.entries(revenueByDay).map(([date, revenue]) => ({
       date,
       revenue: Number(revenue.toFixed(2)),
@@ -148,4 +177,48 @@ async function alertsTrend(req, res) {
   });
 }
 
-module.exports = { summary, salesTrend, inventoryTrend, alertsTrend };
+// ─── Margin trend ────────────────────────────────────────────────────────────
+// Per-day weighted realized margin: Σ(qty * (unitPrice - costPrice)) / Σ(qty * unitPrice).
+async function marginTrend(req, res) {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 7), 180);
+  const since = new Date(Date.now() - days * 86400000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const lines = await prisma.salesOrderLine.findMany({
+    where: { salesOrder: { shippedAt: { gte: since } } },
+    select: {
+      qty: true, unitPrice: true,
+      salesOrder: { select: { shippedAt: true } },
+      product: { select: { costPrice: true } },
+    },
+  });
+
+  const revenueByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  const profitByDay = Object.fromEntries(buildEmptyDays(days).map((d) => [d.date, 0]));
+  for (const ln of lines) {
+    if (!ln.product || ln.product.costPrice == null) continue;
+    const k = dateKey(ln.salesOrder.shippedAt);
+    if (revenueByDay[k] == null) continue;
+    const qty = Number(ln.qty);
+    const price = Number(ln.unitPrice);
+    const cost = Number(ln.product.costPrice);
+    if (qty <= 0 || price <= 0) continue;
+    revenueByDay[k] += qty * price;
+    profitByDay[k] += qty * (price - cost);
+  }
+  res.json({
+    days,
+    series: Object.keys(revenueByDay).map((date) => {
+      const rev = revenueByDay[date];
+      const profit = profitByDay[date];
+      return {
+        date,
+        revenue: Number(rev.toFixed(2)),
+        profit: Number(profit.toFixed(2)),
+        marginPct: rev > 0 ? Number(((profit / rev) * 100).toFixed(2)) : null,
+      };
+    }),
+  });
+}
+
+module.exports = { summary, salesTrend, inventoryTrend, alertsTrend, marginTrend };
