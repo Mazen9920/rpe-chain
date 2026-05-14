@@ -21,6 +21,9 @@ import SalesOrderDetailPage from './pages/SalesOrderDetailPage';
 import AccountsPayablePage from './pages/AccountsPayablePage';
 import SupplierInvoiceDetailPage from './pages/SupplierInvoiceDetailPage';
 import PaymentDetailPage from './pages/PaymentDetailPage';
+import AccountsReceivablePage from './pages/AccountsReceivablePage';
+import CustomerInvoiceDetailPage from './pages/CustomerInvoiceDetailPage';
+import CustomerPaymentDetailPage from './pages/CustomerPaymentDetailPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
 import NotificationSettingsPage from './pages/NotificationSettingsPage';
@@ -56,6 +59,9 @@ export default function App() {
               <Route path="/customers/:id" element={<CustomerDetailPage />} />
               <Route path="/sales-orders" element={<SalesOrdersPage />} />
               <Route path="/sales-orders/:id" element={<SalesOrderDetailPage />} />
+              <Route path="/ar" element={<AccountsReceivablePage />} />
+              <Route path="/ar/invoices/:id" element={<CustomerInvoiceDetailPage />} />
+              <Route path="/ar/payments/:id" element={<CustomerPaymentDetailPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
               <Route path="/settings/fx" element={<FxSettingsPage />} />

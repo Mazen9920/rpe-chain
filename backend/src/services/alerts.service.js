@@ -20,6 +20,9 @@ const AUDIENCE = {
   MARGIN: ['SALES', 'FINANCE', 'ADMIN'],
   LEAD_TIME: ['PROCUREMENT', 'ADMIN'],
   MATCH_EXCEPTION: ['FINANCE', 'ADMIN'],
+  // Tier 4 #14 — AR alerts
+  CUSTOMER_INVOICE_DUE: ['SALES', 'FINANCE', 'ADMIN'],
+  CUSTOMER_OVERDUE: ['SALES', 'FINANCE', 'ADMIN'],
 };
 
 // Carrier SLA (days from dispatch to expected delivery) — used when estimatedArrival missing.
@@ -745,6 +748,80 @@ async function scanInvoiceExceptionAlerts() {
   return { active: stillActive.size, resolved };
 }
 
+// ─── 10. AR — Customer invoice due & overdue ────────────────────────────────
+async function scanArAlerts() {
+  const TYPES = ['CUSTOMER_INVOICE_DUE', 'CUSTOMER_OVERDUE'];
+  const openByKey = await loadOpenAlertsForTypes(TYPES);
+  const stillActive = new Set();
+
+  const now = new Date();
+  const in7 = new Date(now.getTime() + 7 * 86400000);
+
+  const invoices = await prisma.customerInvoice.findMany({
+    where: { status: { in: ['POSTED', 'PARTIALLY_PAID'] } },
+    include: { customer: { select: { id: true, code: true, name: true } } },
+  });
+
+  for (const inv of invoices) {
+    const remaining = Number(inv.amount) - Number(inv.paidAmount);
+    if (remaining <= 0) continue;
+    const due = new Date(inv.dueDate);
+    const daysToDue = Math.ceil((due.getTime() - now.getTime()) / 86400000);
+
+    if (daysToDue < 0) {
+      const daysOver = Math.abs(daysToDue);
+      let severity;
+      if (daysOver > 30) severity = 'CRITICAL';
+      else if (daysOver > 14) severity = 'HIGH';
+      else severity = 'MEDIUM';
+      await upsertAlert(stillActive, openByKey, {
+        type: 'CUSTOMER_OVERDUE',
+        severity,
+        entityType: 'CustomerInvoice',
+        entityId: inv.id,
+        payload: {
+          invoiceNumber: inv.invoiceNumber,
+          customerCode: inv.customer.code,
+          customerName: inv.customer.name,
+          amount: Number(inv.amount),
+          paidAmount: Number(inv.paidAmount),
+          remaining,
+          currency: inv.currency,
+          dueDate: inv.dueDate,
+          daysOverdue: daysOver,
+        },
+        reasoning: `Invoice ${inv.invoiceNumber} (${inv.customer.code}) overdue ${daysOver}d — ${remaining.toFixed(2)} ${inv.currency} unpaid.`,
+      });
+    } else if (daysToDue <= 7 && due <= in7) {
+      let severity;
+      if (daysToDue <= 1) severity = 'HIGH';
+      else if (daysToDue <= 3) severity = 'MEDIUM';
+      else severity = 'LOW';
+      await upsertAlert(stillActive, openByKey, {
+        type: 'CUSTOMER_INVOICE_DUE',
+        severity,
+        entityType: 'CustomerInvoice',
+        entityId: inv.id,
+        payload: {
+          invoiceNumber: inv.invoiceNumber,
+          customerCode: inv.customer.code,
+          customerName: inv.customer.name,
+          amount: Number(inv.amount),
+          paidAmount: Number(inv.paidAmount),
+          remaining,
+          currency: inv.currency,
+          dueDate: inv.dueDate,
+          daysToDue,
+        },
+        reasoning: `Invoice ${inv.invoiceNumber} (${inv.customer.code}) due in ${daysToDue}d — ${remaining.toFixed(2)} ${inv.currency} outstanding.`,
+      });
+    }
+  }
+
+  const resolved = await autoResolveStale(TYPES, stillActive);
+  return { active: stillActive.size, resolved };
+}
+
 async function runAllScans({ actorId = null, sourceIp = null } = {}) {
   const compliance = require('./compliance.service');
   const summary = {
@@ -758,6 +835,7 @@ async function runAllScans({ actorId = null, sourceIp = null } = {}) {
     marginErosion: await scanMarginErosionAlerts(),
     leadTimeDrift: await scanLeadTimeDriftAlerts(),
     matchException: await scanInvoiceExceptionAlerts(),
+    ar: await scanArAlerts(),
   };
   await logEvent({ eventType: 'ALERTS_SCANNED', entityType: 'Alert', entityId: 'all', actorId, payload: summary, sourceIp });
   return summary;
@@ -859,6 +937,7 @@ module.exports = {
   scanMarginErosionAlerts,
   scanLeadTimeDriftAlerts,
   scanInvoiceExceptionAlerts,
+  scanArAlerts,
   runAllScans,
   listAlerts,
   acknowledgeAlert,

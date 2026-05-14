@@ -55,6 +55,10 @@ model User {
   createdCustomers   Customer[]        @relation("CustomerCreatedBy")
   createdSalesOrders SalesOrder[]      @relation("SalesOrderCreatedBy")
   createdFxRates     FxRate[]
+  createdCustomerInvoices  CustomerInvoice[] @relation("CustomerInvoiceCreatedBy")
+  voidedCustomerInvoices   CustomerInvoice[] @relation("CustomerInvoiceVoidedBy")
+  createdCustomerPayments  CustomerPayment[] @relation("CustomerPaymentCreatedBy")
+  voidedCustomerPayments   CustomerPayment[] @relation("CustomerPaymentVoidedBy")
 }
 
 enum Role {
@@ -153,6 +157,7 @@ model Product {
   productionOrders    ProductionOrder[]
   productionOrderLines ProductionOrderLine[]
   salesOrderLines     SalesOrderLine[]
+  customerInvoiceLines CustomerInvoiceLine[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -910,6 +915,150 @@ model PaymentApplication {
   @@index([invoiceId])
 }
 
+// ─── Accounts Receivable ──────────────────────────────────────────────────────
+
+enum CustomerInvoiceStatus {
+  DRAFT
+  POSTED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum CustomerPaymentMethod {
+  BANK_TRANSFER
+  CHECK
+  CARD
+  CASH
+  OTHER
+}
+
+model CustomerInvoice {
+  id                  String                @id @default(uuid())
+  customerId          String
+  salesOrderId        String?
+  shipmentId          String?
+  invoiceNumber       String
+  invoiceType         String                @default("STANDARD") // STANDARD | CREDIT_NOTE
+  invoiceDate         DateTime
+  dueDate             DateTime
+  subtotal            Decimal               @default(0) @db.Decimal(14, 2)
+  taxAmount           Decimal               @default(0) @db.Decimal(14, 2)
+  amount              Decimal               @db.Decimal(14, 2) // signed; CREDIT_NOTE negative
+  paidAmount          Decimal               @default(0) @db.Decimal(14, 2)
+  currency            String                @default("USD")
+  fxRate              Decimal?              @db.Decimal(14, 6)
+  status              CustomerInvoiceStatus @default(POSTED)
+  notes               String?
+  creditedInvoiceId   String?
+  createdById         String?
+  voidedById          String?
+  voidReason          String?
+  postedAt            DateTime?
+  paidAt              DateTime?
+  voidedAt            DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  customer            Customer                       @relation(fields: [customerId], references: [id])
+  salesOrder          SalesOrder?                    @relation(fields: [salesOrderId], references: [id])
+  shipment            Shipment?                      @relation(fields: [shipmentId], references: [id])
+  creditedInvoice     CustomerInvoice?               @relation("CustomerCreditNoteLink", fields: [creditedInvoiceId], references: [id])
+  creditNotes         CustomerInvoice[]              @relation("CustomerCreditNoteLink")
+  createdBy           User?                          @relation("CustomerInvoiceCreatedBy", fields: [createdById], references: [id])
+  voidedBy            User?                          @relation("CustomerInvoiceVoidedBy", fields: [voidedById], references: [id])
+  lines               CustomerInvoiceLine[]
+  arEntries           ArLedgerEntry[]
+  paymentApplications CustomerPaymentApplication[]
+
+  @@unique([customerId, invoiceNumber])
+  @@unique([shipmentId])
+  @@index([dueDate, status])
+  @@index([customerId, status])
+  @@index([invoiceDate])
+  @@index([salesOrderId])
+}
+
+model CustomerInvoiceLine {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  productId   String?
+  description String
+  quantity    Decimal  @db.Decimal(14, 4)
+  unitPrice   Decimal  @db.Decimal(14, 4)
+  lineTotal   Decimal  @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+
+  invoice CustomerInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+// Append-only AR ledger — every invoice and every payment is a line.
+model ArLedgerEntry {
+  id          String   @id @default(uuid())
+  customerId  String
+  invoiceId   String?
+  paymentId   String?
+  entryType   String   @default("INVOICE_POSTED") // INVOICE_POSTED | PAYMENT_RECEIVED | CREDIT_NOTE | INVOICE_VOIDED | PAYMENT_VOIDED
+  amount      Decimal  @db.Decimal(14, 2) // positive = receivable, negative = payment
+  balance     Decimal  @db.Decimal(14, 2) // running balance snapshot (advisory)
+  dueDate     DateTime?
+  agingBucket String?  // advisory snapshot — authoritative aging computed on read
+  description String?
+  createdAt   DateTime @default(now())
+
+  customer Customer         @relation(fields: [customerId], references: [id])
+  invoice  CustomerInvoice? @relation(fields: [invoiceId], references: [id])
+  payment  CustomerPayment? @relation(fields: [paymentId], references: [id])
+
+  @@index([customerId, createdAt])
+}
+
+model CustomerPayment {
+  id          String                @id @default(uuid())
+  customerId  String
+  amount      Decimal               @db.Decimal(14, 2)
+  currency    String                @default("USD")
+  fxRate      Decimal?              @db.Decimal(14, 6)
+  paymentDate DateTime              @default(now())
+  method      CustomerPaymentMethod
+  status      PaymentStatus         @default(POSTED)
+  reference   String?
+  notes       String?
+  createdById String?
+  voidedById  String?
+  voidedAt    DateTime?
+  voidReason  String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  customer     Customer                       @relation(fields: [customerId], references: [id])
+  createdBy    User?                          @relation("CustomerPaymentCreatedBy", fields: [createdById], references: [id])
+  voidedBy     User?                          @relation("CustomerPaymentVoidedBy", fields: [voidedById], references: [id])
+  applications CustomerPaymentApplication[]
+  arEntries    ArLedgerEntry[]
+
+  @@index([customerId, paymentDate])
+  @@index([status])
+}
+
+model CustomerPaymentApplication {
+  id            String   @id @default(uuid())
+  paymentId     String
+  invoiceId     String
+  amountApplied Decimal  @db.Decimal(14, 2)
+  createdAt     DateTime @default(now())
+
+  payment CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice CustomerInvoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
+}
+
 // ─── Sales & Fulfillment ──────────────────────────────────────────────────────
 
 enum PaymentTerms {
@@ -943,6 +1092,9 @@ model Customer {
   createdBy   User?              @relation("CustomerCreatedBy", fields: [createdById], references: [id])
   contacts    CustomerContact[]
   salesOrders SalesOrder[]
+  invoices    CustomerInvoice[]
+  payments    CustomerPayment[]
+  arEntries   ArLedgerEntry[]
 
   @@index([isActive])
 }
@@ -995,6 +1147,7 @@ model SalesOrder {
   createdBy User?      @relation("SalesOrderCreatedBy", fields: [createdById], references: [id])
   lines     SalesOrderLine[]
   shipments Shipment[]
+  invoices  CustomerInvoice[]
 
   @@index([source, externalId])
   @@index([status])
@@ -1059,6 +1212,7 @@ model Shipment {
 
   lines          ShipmentLine[]
   trackingEvents TrackingEvent[]
+  invoices       CustomerInvoice[]
 
   @@index([salesOrderId])
   @@index([status])

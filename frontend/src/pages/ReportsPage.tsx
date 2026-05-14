@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Download, FileText, Users, ShoppingBag } from 'lucide-react';
-import { reportsService } from '../services';
+import { reportsService, arAgingService } from '../services';
 import { formatMoney } from '../utils/format';
 
-type Tab = 'ap-aging' | 'supplier-scorecards' | 'sales-fulfillment';
+type Tab = 'ap-aging' | 'ar-aging' | 'supplier-scorecards' | 'sales-fulfillment';
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'ap-aging', label: 'AP Aging', icon: FileText },
+  { id: 'ar-aging', label: 'AR Aging', icon: FileText },
   { id: 'supplier-scorecards', label: 'Supplier Scorecards', icon: Users },
   { id: 'sales-fulfillment', label: 'Sales Fulfillment', icon: ShoppingBag },
 ];
@@ -287,8 +288,63 @@ export default function ReportsPage() {
           })}
         </div>
         {tab === 'ap-aging' && <ApAgingReport />}
+        {tab === 'ar-aging' && <ArAgingReport />}
         {tab === 'supplier-scorecards' && <SupplierScorecardsReport />}
         {tab === 'sales-fulfillment' && <SalesFulfillmentReport />}
+      </div>
+    </div>
+  );
+}
+
+function ArAgingReport() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['report', 'ar-aging'],
+    queryFn: () => arAgingService.summary(),
+  });
+  const buckets = ['CURRENT', '1_30', '31_60', '61_90', 'OVER_90'] as const;
+  const labels: Record<string, string> = { CURRENT: 'Current', '1_30': '1–30', '31_60': '31–60', '61_90': '61–90', OVER_90: '90+' };
+  return (
+    <div>
+      <div className="px-4 py-3 border-b border-slate-100 text-sm text-slate-500">
+        Outstanding customer invoices by age bucket (reported in {data?.reportingCurrency ?? 'USD'}).
+      </div>
+      {data ? (
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 p-4 bg-slate-50 border-b border-slate-100">
+          <div>
+            <div className="text-xs text-slate-500">Outstanding</div>
+            <div className="font-bold text-slate-800">{money(data.totals.total, data.reportingCurrency)}</div>
+          </div>
+          {buckets.map((b) => (
+            <div key={b}>
+              <div className="text-xs inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{labels[b]}</div>
+              <div className="font-bold text-slate-800">{money(data.totals[b], data.reportingCurrency)}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50">
+              {['Customer', ...buckets.map((b) => labels[b]), 'Total'].map((h) => (
+                <th key={h} className="text-left px-4 py-2.5 text-slate-500 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {isLoading ? (
+              <tr><td colSpan={buckets.length + 2} className="px-4 py-6 text-center text-slate-400">Loading…</td></tr>
+            ) : !data?.customers.length ? (
+              <tr><td colSpan={buckets.length + 2} className="px-4 py-6 text-center text-slate-400">No open customer invoices.</td></tr>
+            ) : data.customers.map((c) => (
+              <tr key={c.customerId} className="hover:bg-slate-50">
+                <td className="px-4 py-3 font-medium">{c.customerCode} — {c.customerName}</td>
+                {buckets.map((b) => <td key={b} className="px-4 py-3 tabular-nums">{c[b] > 0 ? money(c[b], data.reportingCurrency) : '—'}</td>)}
+                <td className="px-4 py-3 font-semibold tabular-nums">{money(c.total, data.reportingCurrency)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

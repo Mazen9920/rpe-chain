@@ -15,6 +15,7 @@ const navItems = [
   { to: '/customers', icon: UserCheck, label: 'Customers' },
   { to: '/sales-orders', icon: ClipboardList, label: 'Sales Orders' },
   { to: '/shipments', icon: Truck, label: 'Shipments' },
+  { to: '/ar', icon: Receipt, label: 'Accounts Receivable' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/notifications', icon: Mail, label: 'Notifications' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
