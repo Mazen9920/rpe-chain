@@ -3,6 +3,32 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.8.0] — 2026-05-14 — Nightly restore drill (Track B)
+
+Proves the existing `backup.sh` actually produces restorable dumps. Round-trips
+a fresh pg_dump → fresh database → row-count sanity check on `User`, `Product`,
+`GlJournal` every night and on every release tag. Failure pages out via the
+standard GitHub Actions notification path.
+
+### Added
+- **`backend/scripts/restore-verify.sh`** — restores the most-recent dump in
+  `$BACKUP_DIR` (or a path arg) into an ephemeral DB, asserts core tables have
+  `> 0` rows, drops the verify DB. Parses connection params from `DATABASE_URL`
+  via Node's `URL`.
+- **`.github/workflows/restore-drill.yml`** — runs nightly at 03:17 UTC and on
+  every `v*.*.*` tag push. Spins up `postgres:16-alpine` service, applies
+  migrations + seed, runs `backup.sh`, then `restore-verify.sh`. Uploads the
+  failing dump as an artifact for 7 days on red.
+- `test-oauth.sh` wired into `run-all-tests.sh` (was added in v1.7.1 but the
+  aggregator entry shipped here).
+
+### Verified
+- Manual local drill: 336 KB dump → restore → User=6 Product=6 GlJournal=30. OK.
+
+### Tags
+- `restore-drill-v1.0` (section freeze)
+- `v1.8.0` (release)
+
 ## [1.7.1] — 2026-05-14 — Real OAuth2 push for QuickBooks + Xero
 
 Promotes the GL Export integration from simulated stubs to real OAuth2-backed

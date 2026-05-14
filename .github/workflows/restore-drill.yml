@@ -1,0 +1,87 @@
+name: Restore Drill
+
+# Verifies that a fresh pg_dump can be successfully restored into a clean
+# Postgres instance and that core tables are populated. Runs nightly and on
+# release tags. Failure pages out via the standard GitHub Actions notification.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'  # 03:17 UTC daily
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  drill:
+    name: Backup + Restore drill
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rpe_user
+          POSTGRES_PASSWORD: rpe_pass
+          POSTGRES_DB: rpe_supply
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rpe_user -d rpe_supply"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://rpe_user:rpe_pass@localhost:5432/rpe_supply
+      JWT_SECRET: drill-secret-do-not-use-in-prod
+      NODE_ENV: test
+      BACKUP_DIR: /tmp/rpe-backups
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install postgres-client (matching server major)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Prisma generate + migrate
+        working-directory: backend
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+
+      - name: Seed database (gives us real rows to back up)
+        working-directory: backend
+        run: node prisma/seed.js
+
+      - name: Run backup
+        working-directory: backend
+        run: bash scripts/backup.sh "$BACKUP_DIR"
+
+      - name: List backups
+        run: ls -lh "$BACKUP_DIR"
+
+      - name: Restore-verify (round-trip drill)
+        working-directory: backend
+        run: bash scripts/restore-verify.sh
+
+      - name: Upload backup artifact on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpe-backup-drill
+          path: /tmp/rpe-backups/*.dump
+          if-no-files-found: ignore
+          retention-days: 7
