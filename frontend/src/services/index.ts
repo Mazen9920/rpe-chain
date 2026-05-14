@@ -476,3 +476,105 @@ export const settingsService = {
   updateSupplierMatchTolerances: (id: string, body: { qtyPct?: number | null; pricePct?: number | null }) =>
     api.put(`/settings/match-tolerances/suppliers/${id}`, body).then((r) => r.data),
 };
+
+import type {
+  CustomerInvoice,
+  CustomerPayment,
+  ArInvoiceKpis,
+  ArAgingRow,
+  ArAgingSummary,
+  CustomerStatement,
+  CustomerInvoiceStatus,
+  CustomerPaymentMethod,
+  InvoiceType as ArInvoiceType,
+} from '../types/ar';
+
+export interface ArInvoiceListParams {
+  customerId?: string;
+  status?: CustomerInvoiceStatus;
+  invoiceType?: ArInvoiceType;
+  salesOrderId?: string;
+  shipmentId?: string;
+  search?: string;
+  dueBefore?: string;
+  dueAfter?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const arInvoiceService = {
+  list: (params?: ArInvoiceListParams) =>
+    api.get<{ rows: CustomerInvoice[]; total: number }>('/ar/invoices', { params }).then((r) => r.data),
+  kpis: () => api.get<ArInvoiceKpis>('/ar/invoices/kpis').then((r) => r.data),
+  getById: (id: string) => api.get<CustomerInvoice>(`/ar/invoices/${id}`).then((r) => r.data),
+  create: (data: {
+    customerId: string;
+    salesOrderId?: string;
+    shipmentId?: string;
+    invoiceNumber?: string;
+    invoiceType?: ArInvoiceType;
+    invoiceDate?: string;
+    dueDate?: string;
+    currency?: string;
+    fxRate?: number;
+    notes?: string;
+    creditedInvoiceId?: string;
+    lines: Array<{ productId?: string; description?: string; quantity: number; unitPrice: number }>;
+  }) => api.post<CustomerInvoice>('/ar/invoices', data).then((r) => r.data),
+  void: (id: string, reason: string) =>
+    api.post<CustomerInvoice>(`/ar/invoices/${id}/void`, { reason }).then((r) => r.data),
+  generateFromShipment: (shipmentId: string) =>
+    api.post<{ invoice: CustomerInvoice; created: boolean }>('/ar/invoices/generate-from-shipment', { shipmentId }).then((r) => r.data),
+};
+
+export interface CustomerPaymentListParams {
+  customerId?: string;
+  status?: string;
+  method?: CustomerPaymentMethod;
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const customerPaymentService = {
+  list: (params?: CustomerPaymentListParams) =>
+    api.get<{ rows: CustomerPayment[]; total: number }>('/ar/payments', { params }).then((r) => r.data),
+  getById: (id: string) => api.get<CustomerPayment>(`/ar/payments/${id}`).then((r) => r.data),
+  create: (data: {
+    customerId: string;
+    amount: number;
+    currency?: string;
+    fxRate?: number;
+    paymentDate?: string;
+    method: CustomerPaymentMethod;
+    reference?: string;
+    notes?: string;
+    applications: Array<{ invoiceId: string; amountApplied: number }>;
+  }) => api.post<CustomerPayment>('/ar/payments', data).then((r) => r.data),
+  void: (id: string, reason: string) =>
+    api.post<CustomerPayment>(`/ar/payments/${id}/void`, { reason }).then((r) => r.data),
+};
+
+export const arAgingService = {
+  aging: (params?: { customerId?: string; asOf?: string; reportingCurrency?: string }) =>
+    api.get<{ asOf: string; rows: ArAgingRow[] }>('/ar/aging', { params }).then((r) => r.data),
+  summary: (params?: { asOf?: string; reportingCurrency?: string }) =>
+    api.get<ArAgingSummary>('/ar/aging/summary', { params }).then((r) => r.data),
+  statement: (customerId: string, params?: { asOf?: string; fromDate?: string }) =>
+    api.get<CustomerStatement>(`/ar/aging/${customerId}/statement`, { params }).then((r) => r.data),
+};
+
+export const arCreditNoteService = {
+  list: (params?: { customerId?: string; limit?: number; offset?: number }) =>
+    api.get<{ rows: CustomerInvoice[]; total: number }>('/ar/credit-notes', { params }).then((r) => r.data),
+  create: (data: {
+    creditedInvoiceId: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    currency?: string;
+    notes?: string;
+    lines: Array<{ description?: string; quantity: number; unitPrice: number; productId?: string }>;
+  }) => api.post<CustomerInvoice>('/ar/credit-notes', data).then((r) => r.data),
+};

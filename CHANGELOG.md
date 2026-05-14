@@ -3,6 +3,76 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.4.0] — 2026-05-14 — Tier 4 #14 Accounts Receivable
+
+End-to-end customer billing on top of v1.3.0. Mirrors the v1.0 AP module
+(invoices, payments with multi-invoice application, aging buckets, credit
+notes, alerts) but specialised for outbound billing — including automatic
+invoice generation when a shipment is marked `DELIVERED`.
+
+### Added
+- **AR data model**: `CustomerInvoice` (DRAFT/POSTED/PARTIALLY_PAID/PAID/VOID),
+  `CustomerInvoiceLine`, `CustomerPayment` (POSTED/VOIDED), `CustomerPaymentApplication`,
+  `ArLedgerEntry`. `shipmentId` is `UNIQUE` on `CustomerInvoice` so re-running
+  billing for a shipment is naturally idempotent; `@@unique([customerId, invoiceNumber])`
+  prevents duplicates per customer.
+- **`/api/ar/invoices`**: list (filters by customer/SO/shipment/status), KPIs,
+  create POSTED with auto `CIV-YYYYMM-NNNN` numbering, fetch by id, void
+  (admin-only, blocked when `paidAmount > 0` → `INVOICE_HAS_PAYMENTS`).
+- **`/api/ar/invoices/generate-from-shipment`**: builds a `CustomerInvoice`
+  from a `Shipment` + its `SalesOrder` lines; idempotent (returns existing
+  invoice with `created:false` on re-run).
+- **`/api/ar/payments`**: record customer payments with multi-invoice
+  applications, cross-currency FX (`FX_RATE_REQUIRED` when missing),
+  over-application guard (`OVER_APPLICATION`), admin-only void that
+  reverts invoice state and blocks if a later payment touched the same
+  invoice (`PAYMENT_LOCKED`).
+- **`/api/ar/aging`** + `/summary` + `/:customerId/statement`: open-balance
+  aging in 5 buckets (CURRENT, 1–30, 31–60, 61–90, OVER_90) with
+  reporting-currency conversion (re-using the v1.3.0 FX engine) and a
+  per-customer ledger statement.
+- **`/api/ar/credit-notes`**: negative-amount credit notes linked to an
+  original invoice (`creditedInvoiceId`).
+- **Auto-billing on delivery**: `shipment.service.markDelivered()` now calls
+  `arBilling.generateFromShipment()` in a try/catch after `SHIPMENT_DELIVERED`
+  is logged; failures are surfaced as console errors but do not roll back
+  the delivery transaction.
+- **Alerts (Section 11 extension)**: new `CUSTOMER_INVOICE_DUE` (severity by
+  days-to-due) and `CUSTOMER_OVERDUE` (severity by days-past-due) channels,
+  audited under the FINANCE/SALES audiences. Wired into `scanArAlerts()` and
+  `runAllScans()` (`ar.active` in `/alerts/scan` response).
+- **Frontend**: new `/ar` workspace with Invoices, Payments, Aging, and
+  Credit Notes tabs; detail pages at `/ar/invoices/:id` and
+  `/ar/payments/:id` (status pill, line items, applications, void actions);
+  AR Invoices section on the Sales Order detail; AR Aging report tab on
+  Reports. Sidebar nav entry "Accounts Receivable".
+
+### Changed
+- `shipment.service.markDelivered()` — adds AR auto-billing hook after the
+  delivery event is logged; the AR call is best-effort and isolated from
+  the delivery transaction.
+- `alerts.service.AUDIENCE` map extended with the two new AR keys.
+- `alerts.service.runAllScans()` summary now reports an `ar` section.
+
+### Migrations
+- `20260514104811_add_ar_models` — adds `CustomerInvoice`,
+  `CustomerInvoiceLine`, `CustomerPayment`, `CustomerPaymentApplication`,
+  `ArLedgerEntry`, plus `CustomerInvoiceStatus` and `CustomerPaymentMethod`
+  enums. Unique constraints on `(customerId, invoiceNumber)` and on
+  `shipmentId` for idempotency.
+
+### RBAC
+- `AR_READ = [ADMIN, FINANCE, SALES]` (lists, KPIs, aging, statements).
+- `AR_WRITE` for invoices = `[ADMIN, FINANCE, SALES]` (SALES can post their
+  own invoices); `AR_WRITE` for payments + credit notes = `[ADMIN, FINANCE]`.
+- `AR_ADMIN = [ADMIN]` for void operations on invoices and payments.
+
+### Smoke matrix
+13 backend smoke scripts pass end-to-end (adds `test-ar.sh`, 25 assertions).
+`test-fulfillment.sh` extended with two new assertions (22a/22b) that the
+delivery flow auto-creates the AR invoice and that
+`generate-from-shipment` is idempotent. Frontend `tsc --noEmit` clean.
+
 ## [1.3.0] — 2026-05-14 — Tier 3 intelligence (Sections 11–14)
 
 Intelligence sprint on top of v1.2.0. Closes the operational loop with

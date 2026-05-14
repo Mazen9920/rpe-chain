@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ArrowLeft, CheckCircle, Package, Truck, X, AlertCircle } from 'lucide-react';
-import { salesOrderService } from '../services';
+import { salesOrderService, arInvoiceService } from '../services';
 import type { SOStatus, ShipPayload, PickPayload } from '../types/fulfillment';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -229,6 +229,46 @@ export default function SalesOrderDetailPage() {
 
       {showPick && <PickModal soId={id} lines={so.lines ?? []} onClose={() => setShowPick(false)} onDone={() => { invalidate(); setShowPick(false); }} onError={(m) => { setActionErr(m); setShowPick(false); }} />}
       {showShip && <ShipModal soId={id} onClose={() => setShowShip(false)} onDone={() => { invalidate(); setShowShip(false); }} onError={(m) => { setActionErr(m); setShowShip(false); }} />}
+      <ArInvoicesSection salesOrderId={id} />
+    </div>
+  );
+}
+
+function ArInvoicesSection({ salesOrderId }: { salesOrderId: string }) {
+  const { data } = useQuery({
+    queryKey: ['ar-invoices-for-so', salesOrderId],
+    queryFn: () => arInvoiceService.list({ salesOrderId, limit: 50 }),
+    enabled: !!salesOrderId,
+  });
+  const rows = data?.rows ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+      <h3 className="font-semibold text-slate-800 mb-4">Customer invoices</h3>
+      <table className="w-full text-sm">
+        <thead className="text-xs text-slate-500 uppercase border-b border-slate-100">
+          <tr>
+            <th className="text-left py-2">Invoice #</th>
+            <th className="text-left py-2">Status</th>
+            <th className="text-right py-2">Amount</th>
+            <th className="text-right py-2">Paid</th>
+            <th className="text-left py-2">Due</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((inv) => (
+            <tr key={inv.id} className="border-b border-slate-50">
+              <td className="py-2 font-mono text-xs">{inv.invoiceNumber}</td>
+              <td className="py-2"><span className="px-2 py-0.5 rounded text-xs bg-slate-100">{inv.status}</span></td>
+              <td className="py-2 text-right tabular-nums">{Number(inv.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} {inv.currency}</td>
+              <td className="py-2 text-right tabular-nums text-slate-500">{Number(inv.paidAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td className="py-2 text-slate-500">{new Date(inv.dueDate).toLocaleDateString()}</td>
+              <td className="py-2 text-right"><Link to={`/ar/invoices/${inv.id}`} className="text-indigo-600 text-xs">View →</Link></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -161,6 +161,19 @@ if [ "$ALLOC_OK" = "1" ]; then
   R=$(curl -s -X POST -H "Authorization: Bearer $SALES" $BASE/shipments/$SHIP_ID/deliver)
   SHIP_STATUS=$(echo "$R" | jget status)
   [ "$SHIP_STATUS" = "DELIVERED" ] && PASS "DELIVERED" || FAIL "got status=$SHIP_STATUS resp=$R"
+
+  echo ""; echo "===== TEST 22a: Auto-billing creates CustomerInvoice on deliver (v1.4.0) ====="
+  # Small delay-free sanity check — the billing call is awaited inside markDelivered.
+  R=$(curl -s -H "Authorization: Bearer $FIN" "$BASE/ar/invoices?shipmentId=$SHIP_ID")
+  AR_INV_ID=$(echo "$R" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{let j=JSON.parse(d);let r=(j.rows||j.items||[])[0];process.stdout.write(r?r.id:"")})')
+  [ -n "$AR_INV_ID" ] && PASS "auto AR invoice=$AR_INV_ID" || FAIL "no auto AR invoice: $R"
+
+  echo ""; echo "===== TEST 22b: generate-from-shipment is idempotent (returns existing) ====="
+  R=$(curl -s -X POST -H "Authorization: Bearer $FIN" -H "Content-Type: application/json" \
+    -d '{"shipmentId":"'$SHIP_ID'"}' $BASE/ar/invoices/generate-from-shipment)
+  SAME_ID=$(echo "$R" | jget invoice.id)
+  CREATED=$(echo "$R" | jget created)
+  [ "$SAME_ID" = "$AR_INV_ID" ] && [ "$CREATED" = "false" ] && PASS "idempotent same=$SAME_ID created=false" || FAIL "got id=$SAME_ID created=$CREATED"
 fi
 
 echo ""; echo "===== TEST 23: Cancel a fresh SO releases reservations ====="

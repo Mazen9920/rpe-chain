@@ -35,6 +35,11 @@ if [ -f test-fx.sh ]; then
   SCRIPTS+=(test-fx.sh)
 fi
 
+# Tier 4 — Accounts Receivable (added in v1.4.0).
+if [ -f test-ar.sh ]; then
+  SCRIPTS+=(test-ar.sh)
+fi
+
 FAILED=()
 for s in "${SCRIPTS[@]}"; do
   echo ""

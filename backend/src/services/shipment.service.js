@@ -109,6 +109,16 @@ async function markDelivered(id, data, actor, sourceIp) {
     payload: { shipmentNumber: s.shipmentNumber, salesOrderId: s.salesOrderId },
     sourceIp,
   });
+
+  // Auto-generate AR invoice from this shipment. Idempotent; failure must not roll back delivery.
+  try {
+    const arBilling = require('./arBilling.service');
+    await arBilling.generateFromShipment(id, actor, sourceIp);
+  } catch (e) {
+    // Permissible failures: NO_SALES_ORDER, NO_CUSTOMER, EMPTY_SHIPMENT, CURRENCY_REQUIRED.
+    // Anything else is logged but doesn't fail the delivery.
+    console.error(`[shipment] auto-invoice for ${s.shipmentNumber} failed: ${e.message} (${e.code || 'UNKNOWN'})`);
+  }
   return updated;
 }
 
