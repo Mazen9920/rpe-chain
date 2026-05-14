@@ -1571,3 +1571,104 @@ model ReportSchedule {
   @@index([isActive, nextRunAt])
   @@index([definitionId])
 }
+
+// ──────────── GL Export (Tier 4 #17 — v1.7.0) ────────────
+
+enum GlAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model GlAccount {
+  id          String         @id @default(uuid())
+  code        String         @unique
+  name        String
+  type        GlAccountType
+  parentId    String?
+  isActive    Boolean        @default(true)
+  description String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  parent   GlAccount?  @relation("GlAccountParent", fields: [parentId], references: [id])
+  children GlAccount[] @relation("GlAccountParent")
+
+  debitMappings  GlAccountMapping[] @relation("DebitAccount")
+  creditMappings GlAccountMapping[] @relation("CreditAccount")
+  journalLines   GlJournalLine[]
+
+  @@index([type, isActive])
+}
+
+model GlAccountMapping {
+  id              String   @id @default(uuid())
+  // eventType is the source ledger entryType: e.g. AP_INVOICE_POSTED, AR_PAYMENT_RECEIVED.
+  eventType       String   @unique
+  debitAccountId  String
+  creditAccountId String
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  debitAccount  GlAccount @relation("DebitAccount", fields: [debitAccountId], references: [id])
+  creditAccount GlAccount @relation("CreditAccount", fields: [creditAccountId], references: [id])
+}
+
+model GlJournal {
+  id                String   @id @default(uuid())
+  journalNumber     String   @unique
+  // Source: which ledger row produced this journal — used for idempotency.
+  sourceLedger      String   // 'AP' | 'AR'
+  sourceEntryId     String   @unique
+  sourceEntryType   String   // INVOICE_POSTED, PAYMENT_RECEIVED, etc.
+  postedAt          DateTime
+  currency          String   @default("USD")
+  totalAmount       Decimal  @db.Decimal(14, 2)
+  description       String?
+
+  // Push state
+  exportedAt        DateTime?
+  exportProvider    String?  // 'quickbooks' | 'xero' | 'csv'
+  externalId        String?  // ID returned by external system
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  lines GlJournalLine[]
+
+  @@index([postedAt])
+  @@index([sourceLedger, sourceEntryType])
+}
+
+model GlJournalLine {
+  id          String  @id @default(uuid())
+  journalId   String
+  accountId   String
+  debit       Decimal @db.Decimal(14, 2) @default(0)
+  credit      Decimal @db.Decimal(14, 2) @default(0)
+  description String?
+
+  journal GlJournal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  account GlAccount @relation(fields: [accountId], references: [id])
+
+  @@index([journalId])
+  @@index([accountId])
+}
+
+model GlIntegrationCredential {
+  id           String   @id @default(uuid())
+  provider     String   @unique // 'quickbooks' | 'xero'
+  realmId      String?
+  // Encrypted at rest via AES-256-GCM keyed off JWT_SECRET.
+  accessToken  String?  @db.Text
+  refreshToken String?  @db.Text
+  expiresAt    DateTime?
+  meta         Json?
+  isActive     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

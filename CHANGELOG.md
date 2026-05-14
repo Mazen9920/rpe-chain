@@ -3,6 +3,56 @@
 All notable changes to RPE Chain Supply OS are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/) and SemVer.
 
+## [1.7.0] — 2026-05-14 — Tier 4 #17 GL Export (QuickBooks / Xero)
+
+Generate balanced double-entry GL journals from AP + AR ledger entries and push
+them to QuickBooks Online or Xero via the existing outbox pattern. CSV export is
+always available; live push is stubbed (simulated externalId) until real OAuth2
+wiring lands in v1.7.1, while preserving the idempotency contract via
+`GlJournal.externalId` + `GlJournal.exportProvider`.
+
+### Added
+- **Prisma models** (`backend/prisma/schema.prisma` — migration `20260514120230_gl_export_v1`):
+  - `GlAccount` (code, name, `GlAccountType` enum [ASSET/LIABILITY/EQUITY/REVENUE/EXPENSE], parent, isActive).
+  - `GlAccountMapping` (eventType → debitAccountId + creditAccountId, unique on eventType).
+  - `GlJournal` (journalNumber `GL-YYYYMM-NNNN`, sourceLedger, sourceEntryId UNIQUE for idempotency, sourceEntryType, postedAt, currency, totalAmount, exportedAt, exportProvider, externalId).
+  - `GlJournalLine` (debit/credit decimal, account FK, cascade-on-journal-delete).
+  - `GlIntegrationCredential` (provider, encrypted access/refresh tokens, expiresAt). For v1.7.1 OAuth.
+- **`gl.service.js`** — accounts CRUD with in-use protection, mappings upsert/delete with allow-listed eventType validation, `generateForRange({from,to})` which:
+  - Pulls AP+AR ledger entries in range, skips ones already journaled (via `sourceEntryId` UNIQUE),
+  - Resolves mapping by `<LEDGER>_<ENTRY_TYPE>` (e.g. `AR_PAYMENT_RECEIVED`),
+  - Creates balanced 2-line journals (Math.abs(amount) on each side),
+  - Reports `created/skipped/errors[]` with reason codes (`MAPPING_REQUIRED`, `already_exported`, `zero_amount`),
+  - Verifies `sum(debits) === sum(credits)` per journal before returning.
+- **Routes** (`/api/gl/*`) — accounts, mappings, journals list/get/generate, `/journals/export.csv`, `/journals/:id/push/:provider`.
+- **Outbox handlers** — `quickbooks` and `xero` targets, both action `journal.push`. Currently simulate a successful push (record `externalId` `QBO-SIM-...` / `XERO-SIM-...`) when `QUICKBOOKS_CLIENT_ID` / `XERO_CLIENT_ID` env vars are absent. Real OAuth2 + `JournalEntry` / `ManualJournals` API calls reserved for v1.7.1.
+- **AES-256-GCM encryption helper** (`backend/src/lib/crypto.js`) — keyed off `JWT_SECRET`, ciphertext format `v1:<iv-b64>:<tag-b64>:<ct-b64>`. Earmarked for v1.7.1 OAuth token storage in `GlIntegrationCredential`.
+- **Frontend `GlExportPage`** (`/gl-export`) — three tabs:
+  - *Journals*: date range filter, **Generate journals** action, **Export CSV** download, row-level **QB** / **Xero** push buttons, drilldown drawer showing per-line debits/credits with running totals.
+  - *Chart of Accounts*: list + inline create form + delete with in-use guard surfacing 409.
+  - *Mappings*: dropdown per allowed eventType, debit/credit account pickers, upsert + delete.
+- **Service typings** in `frontend/src/services/index.ts` — `glService` + `GlAccount`/`GlAccountMapping`/`GlJournal`/`GlJournalLine` interfaces.
+- **Nav** — "GL Export" link added to `Layout` sidebar.
+
+### RBAC
+- **ADMIN**: full access to accounts, mappings, journals, push, CSV.
+- **FINANCE**: read accounts/mappings, generate journals, list/CSV export, push.
+- **All other roles**: 403 on `/api/gl/*` (verified by test).
+
+### Idempotency
+- `GlJournal.sourceEntryId` is UNIQUE — re-running `generate` over the same range produces 0 new journals (`skipped:'already_exported'`).
+- `pushJournal` enqueues an outbox row with `idempotencyKey=gl:<provider>:<journalId>`. The handler short-circuits if `externalId` is already set for the same provider.
+
+### Smoke matrix
+`backend/scripts/test-gl.sh` — 15 assertion groups covering: anon 401, SALES 403, account CRUD + validation, mapping upsert + invalid eventType, journal generation over 90-day range, balance check (debits=credits), CSV export shape, simulated QuickBooks push via `outbox.processBatch`, invalid provider 400, idempotent re-generation (0 new on second run), unmapped event-type detection, in-use account delete 409. Wired into `run-all-tests.sh`.
+
+### Out of scope (v1.7.1)
+- Real OAuth2 connect flow (`/api/integrations/quickbooks/connect`, `/xero/connect`) and live API calls.
+- Inventory GL journals (only AP + AR ledger today).
+- Reversal entries for `INVOICE_VOIDED` / `PAYMENT_VOIDED` (entries are recorded but their reversal accounting depends on customer policy).
+
+Tags: `gl-v1.0`, `v1.7.0`.
+
 ## [1.6.0] — 2026-05-14 — Tier 4 #16 Mobile Pick/Pack + Barcode
 
 Touch-first mobile picking and packing screens with camera barcode scanning,

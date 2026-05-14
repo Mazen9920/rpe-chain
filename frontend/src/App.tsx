@@ -26,6 +26,7 @@ import CustomerInvoiceDetailPage from './pages/CustomerInvoiceDetailPage';
 import CustomerPaymentDetailPage from './pages/CustomerPaymentDetailPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
+import GlExportPage from './pages/GlExportPage';
 import NotificationSettingsPage from './pages/NotificationSettingsPage';
 import FxSettingsPage from './pages/FxSettingsPage';
 import MobileLayout from './components/MobileLayout';
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="/notifications" element={<NotificationSettingsPage />} />
               <Route path="/settings/fx" element={<FxSettingsPage />} />
               <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/gl-export" element={<GlExportPage />} />
             </Route>
             <Route path="/m" element={<MobileLayout />}>
               <Route index element={<MobileWorklistPage />} />
