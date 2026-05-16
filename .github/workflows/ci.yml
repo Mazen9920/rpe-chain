@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rpe_user
+          POSTGRES_PASSWORD: rpe_pass
+          POSTGRES_DB: rpe_gear
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rpe_user -d rpe_gear"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      APP_ENV: test
+      SECRET_KEY: ci-secret-key-must-be-at-least-32-bytes-aaaa
+      ENCRYPTION_KEY: ""
+      DATABASE_URL: postgresql+asyncpg://rpe_user:rpe_pass@localhost:5432/rpe_gear
+      DATABASE_URL_SYNC: postgresql+psycopg://rpe_user:rpe_pass@localhost:5432/rpe_gear
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv==0.5.10
+
+      - name: Generate Fernet key
+        run: |
+          echo "ENCRYPTION_KEY=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> $GITHUB_ENV
+
+      - name: Install deps
+        run: uv sync --all-extras
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy app/
+
+      - name: Alembic upgrade
+        run: uv run alembic upgrade head
+
+      - name: Tests
+        run: uv run pytest -q --cov=app --cov-report=term-missing
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t rpe-gear:${{ github.sha }} .
