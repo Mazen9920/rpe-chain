@@ -2,6 +2,27 @@
 
 All notable changes documented per release. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), SemVer.
 
+## [0.3.0] — GL · FX · Procurement · AP
+
+### Added
+- **General Ledger**: `gl_accounts` (code unique, account_type ASSET/LIABILITY/EQUITY/REVENUE/EXPENSE, normal_balance DEBIT/CREDIT, parent self-FK, currency, is_postable), `gl_journals` (auto journal_number `J{YYYYMM}{seq:05d}`, source_doc_type/source_doc_id traceability, status DRAFT/POSTED/REVERSED), `gl_journal_lines` (CHECK debit XOR credit; per-currency `base_debit`/`base_credit` computed via FX; JSON `dimensions` for product/warehouse/shipment analytics).
+- **GL service** (`app.services.gl`): `post_journal` enforces Σdebit==Σcredit per currency (raises `UnbalancedJournalError`); `post_pending(entry, account_map)` promotes a v0.2.0 `PendingJournalEntry` to a real `GLJournal` and marks the entry POSTED with `posted_journal_id`; `trial_balance(as_of, currency?)` returns sorted `[(code, debit, credit)]`.
+- **Egypt Chart of Accounts**: `seed_egypt_coa` (idempotent) — Cash 1010, Bank 1020, AR 1100/1110/1120/1130, Inventory 5000/5010/5015/5020, Adjustment-Exp 5030, AP 2010/2020/2030/2040, Input-VAT 2050, Equity 3010/3020, Revenue 4010/4020, COGS 5400/5410, Marketing 6140/6160/6170/6171/6191, Finance 7010/7020.
+- **FX**: `fx_rates` (unique (from_ccy, to_ccy, as_of_date), rate>0, source). `fx.upsert_rate` and `fx.get_rate(when)` — identity for same currency, falls back to most-recent prior rate, raises `FxRateNotFoundError` if none.
+- **Procurement**: `suppliers` (vendor_type MANUFACTURER/SERVICE/CONSUMABLE/CAPEX/UTILITY, currency, payment_terms_days, ap_account_code), `purchase_orders` + `po_lines` (PO# `PO{YYYYMM}{seq:04d}`, qty_ordered/received/invoiced w/ CHECK qty>0, status DRAFT→SENT→PARTIAL→RECEIVED→CLOSED), `goods_receipts` + `goods_receipt_lines` (GR# `GR{YYYYMM}{seq:04d}`, cost_layer_id link).
+- **Purchasing service** (`app.services.purchasing`): `create_po`, `send_po`, `receive_po` (lands FIFO cost layer via `inv.receive`, allocates `landed_cost_total` proportional to line value, updates PO status PARTIAL/RECEIVED, raises `InvalidStateError` on over-receipt), `three_way_match(po_id, invoice_total, tolerance)`.
+- **Accounts Payable**: `supplier_invoices` + `supplier_invoice_lines` (AP# `AP{YYYYMM}{seq:04d}`, unique (supplier_id, invoice_number), `account_code` for direct GL expense routing, optional `po_line_id`), `ap_payments` + `ap_payment_applications` (method CASH/BANK/CHEQUE/EFT).
+- **AP service** (`app.services.ap`): `register_invoice` posts balanced journal (DR expense/inventory accounts + DR Input-VAT 2050 + CR supplier AP account, links `posted_journal_id`); `pay_invoice` posts DR AP / CR cash account (default Bank 1020), updates invoice status PARTIALLY_PAID/PAID and supplier `outstanding_balance`; `aging_buckets(as_of)` returns dict {current, 1_30, 31_60, 61_90, 90_plus}.
+- **COGS→GL bridge**: `services.cogs.post_for_shipment` now calls `gl.post_pending` after creating the pending entry. Falls back gracefully via `try/except AccountNotFoundError` when Egypt CoA is not yet seeded, preserving v0.2.0 behavior.
+- **API routers**: `/gl/accounts`, `/gl/seed-egypt-coa`, `/gl/journals`, `/gl/journals/{id}/lines`, `/gl/trial-balance`, `/fx-rates`, `/fx-rates/lookup`, `/suppliers`, `/purchase-orders`, `/purchase-orders/{id}/send`, `/goods-receipts`, `/supplier-invoices`, `/ap-payments`, `/ap/aging`.
+- **Schemas** (`app.schemas.v3`): camelCase JSON with snake-case Python attributes via `_Camel` base (`populate_by_name=True`, `from_attributes=True`).
+- **Migration `0004_gl_fx_procurement_ap`**: 12 new tables (gl_accounts, gl_journals, gl_journal_lines, fx_rates, suppliers, purchase_orders, po_lines, goods_receipts, goods_receipt_lines, supplier_invoices, supplier_invoice_lines, ap_payments, ap_payment_applications) with full FKs/indexes/CHECK constraints. Down-migration drops in reverse.
+- **Tests**: +12 tests — `test_gl.py` (CoA seed idempotent, post_journal balanced, unbalanced raises, trial balance sums), `test_fx.py` (identity, fallback, missing raises, upsert replaces), `test_procurement_ap.py` (full PO→GR→invoice→payment E2E with TB balanced verification, partial-then-full payment, aging buckets), `test_cogs_gl_wiring.py` (shipment promotes pending to real GL journal when CoA seeded). **62/62 tests pass.**
+
+### Acceptance
+- Sample PO → receipt → invoice → payment posts 2 GL journals (GR lands stock w/o GL entry; invoice and payment each post one balanced journal). Trial balance balances per currency. ✓
+- 50 prior tests still pass; COGS posting gracefully degrades to PENDING when CoA not seeded. ✓
+
 ## [0.2.0] — Catalog · Inventory · Sales · Bundles · Shopify
 
 ### Added

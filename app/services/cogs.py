@@ -165,6 +165,19 @@ async def post_for_shipment(
         )
     entry.posted_at = datetime.utcnow()
     await session.flush()
+
+    # v0.3.0: promote pending entry to real GL journal if Egypt CoA is seeded.
+    # If GL accounts aren't present (older test fixtures), leave entry PENDING.
+    from app.services.gl import (
+        DEFAULT_COGS_ACCOUNT_MAP,
+        AccountNotFoundError,
+        post_pending,
+    )
+
+    try:
+        await post_pending(session, entry=entry, account_map=DEFAULT_COGS_ACCOUNT_MAP)
+    except AccountNotFoundError:
+        pass
     return entry
 
 

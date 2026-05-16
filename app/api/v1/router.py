@@ -5,10 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    ap,
     catalog,
+    gl,
     health,
     inventory,
     mfa,
+    procurement,
     sales,
     shopify_webhooks,
     standard_costs,
@@ -24,6 +27,9 @@ api_router.include_router(catalog.router)
 api_router.include_router(inventory.router)
 api_router.include_router(sales.router)
 api_router.include_router(shopify_webhooks.router)
+api_router.include_router(gl.router)
+api_router.include_router(procurement.router)
+api_router.include_router(ap.router)
 
 api_router.include_router(
     fastapi_users.get_auth_router(auth_backend),
