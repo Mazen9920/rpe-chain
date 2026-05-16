@@ -2,6 +2,27 @@
 
 All notable changes documented per release. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), SemVer.
 
+## [0.2.0] — Catalog · Inventory · Sales · Bundles · Shopify
+
+### Added
+- **Catalog**: `categories` (self-FK tree, code unique, ABC class default A/B/C, `default_service_level`), product extensions (`category_id`, `selling_price`, `external_id`), and `bundle_components` (bundle parent → component products with `qty_per`, `position`, optional `allocation_weight`; rejects self-reference and nested bundles).
+- **Inventory (multi-warehouse FIFO)**: `warehouses`, `lots`, `stock_levels` with optimistic `version` for concurrency-safe writes, append-only `stock_movements` (signed qty + movement type RECEIVE/SHIP/ADJUST/TRANSFER_OUT/TRANSFER_IN/CONSUME/RETURN), `cost_layers` (FIFO with `qty_remaining`/`unit_cost`/`landed_cost_per_unit`/currency, ACTIVE/DEPLETED/LOCKED), `reservations` (PENDING/RELEASED/CONSUMED keyed by `ref_type`+`ref_id`).
+- **Inventory service** (`app.services.inventory`): `receive` (open layer), `consume_layers` (FIFO weighted-avg cost including landed-cost, raises `InsufficientStockError`), `ship`, `transfer` (FIFO out, mirror layer in), `adjust` (delta-aware), `reserve`/`release`/`release_for_ref(consume=True|False)`. Every write bumps `StockLevel.version` (`StockConcurrencyError` on mismatch). Movements recorded for every quantitative change.
+- **Sales**: `customers` (currency, payment terms, credit limit), `sales_orders` (state machine RECEIVED→CONFIRMED→ALLOCATED→PICKED→PACKED→SHIPPED→DELIVERED|CANCELLED, `source` SHOPIFY/MANUAL/B2B + conditional unique `external_id`), `sales_order_lines` (bundle parent/child via `parent_line_id` self-FK CASCADE + `is_bundle_parent`/`is_bundle_component`), `shipments` and `shipment_lines` (stamped `unit_cost` + `cost_source`).
+- **Bundle service** (`app.services.bundle`): `expand_bundle_lines` (parent marked, children at `position=parent*100+i+1`, last child absorbs rounding drift), `compute_bundle_atp = min(floor((on_hand - reserved) / qty_per))`, list-price allocation weights (`selling_price * qty_per`) with optional `allocation_weight` override and opt-in `relative_cost_weights` using `get_cost_for_cogs`.
+- **COGS posting** (`app.services.cogs`): per-shipment `PendingJournalEntry` (DR `COGS_FG`/`COGS_RM` / CR `INV_FG`/`INV_RM`/`INV_PACK`), symbolic account codes resolved by v0.3.0 GL. Unit cost preference: `get_cost_for_cogs` (standard) → FIFO weighted-avg fallback; raises `CogsCostUnavailableError` if neither source available.
+- **Shopify integration**: outbound outbox (`IntegrationOutbox` with target/action/payload/idempotency_key/attempts/next_attempt_at, status PENDING/IN_FLIGHT/SUCCEEDED/FAILED), exponential backoff up to 30 min, max 8 attempts; inbound webhook handlers for `orders/create`, `orders/cancelled`, `products/update` with constant-time HMAC SHA-256 verification, `IdempotencyKey` dedupe on `X-Shopify-Webhook-Id`, raw payload archived in `IntegrationEvent`. Shipment of a Shopify-sourced order auto-enqueues a `fulfillments.create` outbox row.
+- **Pending journals**: `pending_journal_entries` + `pending_journal_lines` (balanced DR/CR with XOR check, JSON dimensions for product/warehouse/shipment).
+- **API surface** (under `/api/v1/`): categories, products, bundle composition + ATP, warehouses, stock levels/movements/cost layers, inventory receive/adjust/transfer, customers, full sales-order lifecycle (`POST /sales-orders`, `confirm`, `allocate`, `cancel`, `ship`), shipments, pending journals (superuser read), and Shopify webhook ingress (`/webhooks/shopify/{orders-create|orders-cancelled|products-update}`).
+- **Alembic 0003**: 17 new tables + 3 product columns + FK to categories + 2 indexes. Reversible downgrade.
+- **Tests**: inventory FIFO + reservations + transfers + optimistic lock (6), bundles composition + ATP + line expansion + cycle rejection (4), full order-to-cash including Shopify outbox enqueue (2), Shopify inbound HMAC + idempotency (4), API smoke (2) — **50/50 tests pass**.
+
+### Engineering invariants (reinforced)
+- Costs and quantities remain `Decimal` end-to-end; ROUND_HALF_EVEN to 4dp.
+- All status enums use `enum.StrEnum`; persisted as `SQLEnum(..., native_enum=False)` so in-memory SQLite tests stay green.
+- Optimistic locking via integer version counter on stock levels — no row-level pessimistic locks needed.
+- Shopify is treated as an external system: webhooks land in raw `IntegrationEvent` first, projections are idempotent, outbox preserves intent during downtime.
+
 ## [0.1.1] — Standard-Cost Engine
 
 ### Added

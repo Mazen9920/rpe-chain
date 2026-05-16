@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:5173"
 
+    # Shopify integration
+    shopify_shop_domain: str = ""
+    shopify_access_token: str = ""
+    shopify_webhook_secret: str = ""
+
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def cors_origins_list(self) -> list[str]:

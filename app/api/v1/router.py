@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import health, mfa, standard_costs
+from app.api.v1 import (
+    catalog,
+    health,
+    inventory,
+    mfa,
+    sales,
+    shopify_webhooks,
+    standard_costs,
+)
 from app.core.users import auth_backend, fastapi_users
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 
@@ -12,6 +20,10 @@ api_router = APIRouter()
 
 api_router.include_router(health.router)
 api_router.include_router(standard_costs.router)
+api_router.include_router(catalog.router)
+api_router.include_router(inventory.router)
+api_router.include_router(sales.router)
+api_router.include_router(shopify_webhooks.router)
 
 api_router.include_router(
     fastapi_users.get_auth_router(auth_backend),

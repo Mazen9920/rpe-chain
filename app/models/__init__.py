@@ -1,5 +1,11 @@
 """Re-export ORM models for Alembic autogenerate."""
 
+from app.models.accounting import (
+    PendingJournalEntry,
+    PendingJournalLine,
+    PendingJournalStatus,
+)
+from app.models.catalog import BundleComponent, Category
 from app.models.costing import (
     BillOfMaterials,
     BomLine,
@@ -12,21 +18,76 @@ from app.models.costing import (
     StandardCost,
     StandardCostStatus,
 )
+from app.models.integrations import (
+    IdempotencyKey,
+    IntegrationEvent,
+    IntegrationOutbox,
+    IntegrationSource,
+    OutboxStatus,
+)
+from app.models.inventory import (
+    CostLayer,
+    CostLayerStatus,
+    Lot,
+    MovementType,
+    Reservation,
+    ReservationStatus,
+    StockLevel,
+    StockMovement,
+    Warehouse,
+)
 from app.models.product import Product, ProductType
+from app.models.sales import (
+    Customer,
+    SalesOrder,
+    SalesOrderLine,
+    SalesOrderSource,
+    SalesOrderStatus,
+    Shipment,
+    ShipmentLine,
+    ShipmentStatus,
+)
 from app.models.user import User
 
 __all__ = [
     "BillOfMaterials",
     "BomLine",
+    "BundleComponent",
+    "Category",
+    "CostLayer",
+    "CostLayerStatus",
     "CostSource",
     "CostingSettings",
+    "Customer",
+    "IdempotencyKey",
+    "IntegrationEvent",
+    "IntegrationOutbox",
+    "IntegrationSource",
+    "Lot",
     "MfgFeeMonth",
+    "MovementType",
     "OtherCostMonth",
     "OtherCostType",
+    "OutboxStatus",
+    "PendingJournalEntry",
+    "PendingJournalLine",
+    "PendingJournalStatus",
     "Product",
     "ProductType",
+    "Reservation",
+    "ReservationStatus",
     "RmCostMonth",
+    "SalesOrder",
+    "SalesOrderLine",
+    "SalesOrderSource",
+    "SalesOrderStatus",
+    "Shipment",
+    "ShipmentLine",
+    "ShipmentStatus",
     "StandardCost",
     "StandardCostStatus",
+    "StockLevel",
+    "StockMovement",
     "User",
+    "Warehouse",
 ]

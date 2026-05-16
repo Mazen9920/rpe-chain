@@ -30,9 +30,34 @@ class BomCycleError(AppError):
     code = "bom_cycle"
 
 
+class BundleCycleError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "bundle_cycle"
+
+
 class NotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "not_found"
+
+
+class CogsCostUnavailableError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "cogs_cost_unavailable"
+
+
+class InsufficientStockError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "insufficient_stock"
+
+
+class InvalidStateError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "invalid_state"
+
+
+class StockConcurrencyError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "stock_concurrency"
 
 
 def install_app_error_handler(app: FastAPI) -> None:
