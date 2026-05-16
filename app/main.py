@@ -28,7 +28,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="RPE Gear",
-        version="0.4.0",
+        version="0.4.1",
         description="RPE supply OS — Python rewrite",
         lifespan=lifespan,
     )

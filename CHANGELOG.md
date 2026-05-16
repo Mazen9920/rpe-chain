@@ -2,6 +2,37 @@
 
 All notable changes documented per release. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), SemVer.
 
+## [0.4.1] — Manufacturing (MO) + Returns (RMA) (Phase B of v0.4.0 split)
+
+> Closes the deferred half of v0.4.0: production-order accounting + RMA/returns processing. Cash-side automation from v0.4.0 Phase A remains the foundation; this release adds the supply-side counterpart (issue RM → WIP → FG at standard cost, variance to inventory adjustments) and the reverse-logistics counterpart of sales (authorize RMA → receive with split disposition → restock + refund + COGS reversal).
+
+### Added
+- **Models** (`app.models.manufacturing`): `work_centers` (code UNIQUE, hourly_rate, capacity_hours_per_day); `production_orders` (mo_number UNIQUE MOYYYYMM#####, status DRAFT/RELEASED/IN_PROGRESS/DONE/CLOSED/CANCELLED, qty_planned/qty_produced Numeric(12,4), std_cost_per_unit/total_std_cost/total_actual_cost/variance Numeric(18,4), issue_journal_id + completion_journal_id + variance_journal_id traceability FKs); `mo_components` (UNIQUE(mo_id, component_product_id), qty_required>0 + qty_issued>=0 CHECK, std_unit_cost + actual_unit_cost); `mo_operations` (sequence, std_hours, work_center FK).
+- **Models** (`app.models.rma`): `rmas` (rma_number UNIQUE RMAYYYYMM#####, status REQUESTED/AUTHORIZED/RECEIVED/CLOSED/CANCELLED, refund_method BANK/CASH/CREDIT_NOTE → account 1020/1010/1100, total_refund_amount, refund_journal_id + cogs_reversal_journal_id traceability); `rma_lines` (qty_requested/received/restocked/scrapped, original_unit_price + original_unit_cost frozen at creation, disposition RESTOCK/SCRAP).
+- **Migration** `0007_production_orders_rma` (down_revision=0006): creates all 6 tables with FK/CHECK/UNIQUE/index coverage; reversible.
+- **Service** `app.services.production`:
+  - `create_mo` — explodes active BOM into MOComponent rows (qty_required = qty_per × qty_planned × (1 + scrap_factor_pct)); pulls std_unit_cost from `standard_cost.get_cost_for_cogs`; precomputes total_std_cost + std_cost_per_unit.
+  - `release_mo` — DRAFT → RELEASED guard.
+  - `issue_materials` — RELEASED/IN_PROGRESS → IN_PROGRESS; FIFO-consumes RM via `inventory.consume_layers` + decrements StockLevel + records SHIP movements; posts **DR 5015 WIP / CR 5010 RM Inventory** at actual FIFO cost. Idempotent on `issue_journal_id`.
+  - `complete_mo` — IN_PROGRESS → DONE; receives FG into stock at standard cost via `inventory.receive`; posts **DR 5000 FG Inventory / CR 5015 WIP** (qty × std unit cost).
+  - `close_mo` — DONE/IN_PROGRESS → CLOSED; computes variance = total_actual_cost − (std_cost_per_unit × qty_produced); posts **DR 5030 Inventory Adjustments / CR 5015 WIP** (unfavorable) or reverse (favorable).
+  - `cancel_mo`, `add_operation`, `wip_balance`, `open_mo_summary`.
+- **Service** `app.services.rma`:
+  - `create_rma` — creates RMA + lines; refund_account_code derived from refund_method (BANK→1020 / CASH→1010 / CREDIT_NOTE→1100); total_refund_amount = Σ(qty_requested × original_unit_price).
+  - `authorize_rma` — REQUESTED → AUTHORIZED.
+  - `receive_rma` — AUTHORIZED → RECEIVED; per-line `(qty_restocked, qty_scrapped)` dispositions with sum ≤ qty_requested guard; default = full restock (or full scrap per line.disposition).
+  - `close_rma` — RECEIVED → CLOSED; for each restocked qty calls `inventory.receive` at original_unit_cost; posts **DR 4010 Sales Revenue / CR refund_account** at total_refund_amount + **DR 5000 FG / CR 5400 COGS-FG** at Σ(qty_restocked × original_unit_cost).
+  - `cancel_rma` (only from REQUESTED/AUTHORIZED), `open_rma_summary`.
+- **Schemas** `app.schemas.v4_1`: WorkCenter, MOCreate/Out/Component/Complete/Summary, RMACreate/LineIn/LineOut/Out/ReceiveIn/Summary (all camelCase via `_CamelBase`).
+- **Routers** `app.api.v1.production` + `app.api.v1.rma`: full CRUD + state-transition endpoints (`/production/orders/{id}/{release,issue,complete,close,cancel}`, `/rma/{id}/{authorize,receive,close,cancel}`); summary endpoints; work-center management.
+- **Celery task** `rpe_gear.production.daily_summary` (Beat: daily 09:00 UTC) — read-only WIP balance + open MO counts for monitoring.
+- **Tests** (19 new): `tests/services/test_production.py` (10) covers BOM explosion, missing-BOM guard, release/issue/complete/close lifecycle, idempotent issue, variance computation, cancel state-machine, WIP balance, summary counts; `tests/services/test_rma.py` (9) covers create-with-refund-method-mapping, authorize state machine, receive default + split disposition, overage rejection, close-restocks-inventory, cancel guards, summary.
+
+### Notes
+- All journal posts are wrapped in `try/except gl.AccountNotFoundError: pass` to keep service tests independent of CoA seeding (consistent with v0.4.0 pattern).
+- Egypt CoA already contains all required accounts (5015 WIP, 5010 RM Inv, 5000 FG Inv, 5030 Inv Adjustments, 5400 COGS-FG, 4010 Sales Revenue, 1010/1020/1100) — no seed changes needed.
+- 109/109 tests passing; `ruff check`, `ruff format`, `mypy --strict app/` all green.
+
 ## [0.4.0] — Cash-in Reconciliation: Paymob · Bosta COD · Bank · Chargebacks (Phase A of v0.4.0 split)
 
 > This is **Phase A** of the original v0.4.0 master-plan ticket. Phase B (production-order MRP + RMA/returns) is now scheduled for v0.4.1. The split keeps each release small enough to ship + verify in isolation while preserving the cash-side automation theme.

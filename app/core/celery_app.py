@@ -78,4 +78,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour=8),
         "args": (),
     },
+    # v0.4.1 production monitoring:
+    # Daily 09:00 UTC — compute current WIP balance + open MO counts.
+    "daily-production-summary": {
+        "task": "rpe_gear.production.daily_summary",
+        "schedule": crontab(minute=0, hour=9),
+        "args": (),
+    },
 }

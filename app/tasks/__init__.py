@@ -253,3 +253,18 @@ def bank_auto_match_task() -> dict[str, Any]:
             return report
 
     return asyncio.run(_run())
+
+
+# v0.4.1 manufacturing monitoring task
+@celery_app.task(name="rpe_gear.production.daily_summary")  # type: ignore[untyped-decorator]
+def production_daily_summary_task() -> dict[str, Any]:
+    """Daily WIP balance + open MO counts (read-only monitoring)."""
+    from app.services.production import open_mo_summary, wip_balance
+
+    async def _run() -> dict[str, Any]:
+        async with SessionLocal() as session:
+            counts = await open_mo_summary(session)
+            wip = await wip_balance(session)
+            return {"counts": counts, "wip_balance": str(wip)}
+
+    return asyncio.run(_run())

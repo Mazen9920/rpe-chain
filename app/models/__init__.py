@@ -64,6 +64,13 @@ from app.models.inventory import (
     StockMovement,
     Warehouse,
 )
+from app.models.manufacturing import (
+    MOComponent,
+    MOOperation,
+    MOStatus,
+    ProductionOrder,
+    WorkCenter,
+)
 from app.models.payments import (
     BankAccount,
     BankTransaction,
@@ -94,6 +101,13 @@ from app.models.procurement import (
     VendorType,
 )
 from app.models.product import Product, ProductType
+from app.models.rma import (
+    RMA,
+    RMALine,
+    RMALineDisposition,
+    RMARefundMethod,
+    RMAStatus,
+)
 from app.models.sales import (
     Customer,
     SalesOrder,
@@ -107,6 +121,7 @@ from app.models.sales import (
 from app.models.user import User
 
 __all__ = [
+    "RMA",
     "APPayment",
     "APPaymentApplication",
     "ARPayment",
@@ -152,6 +167,9 @@ __all__ = [
     "IntegrationSource",
     "JournalStatus",
     "Lot",
+    "MOComponent",
+    "MOOperation",
+    "MOStatus",
     "MfgFeeMonth",
     "MovementType",
     "NormalBalance",
@@ -170,7 +188,12 @@ __all__ = [
     "PeriodStatus",
     "Product",
     "ProductType",
+    "ProductionOrder",
     "PurchaseOrder",
+    "RMALine",
+    "RMALineDisposition",
+    "RMARefundMethod",
+    "RMAStatus",
     "RecognitionEntry",
     "RecognitionMode",
     "Reservation",
@@ -194,4 +217,5 @@ __all__ = [
     "User",
     "VendorType",
     "Warehouse",
+    "WorkCenter",
 ]

@@ -16,6 +16,8 @@ from app.api.v1 import (
     mfa,
     payments,
     procurement,
+    production,
+    rma,
     sales,
     shopify_webhooks,
     standard_costs,
@@ -38,6 +40,8 @@ api_router.include_router(ar.router)
 api_router.include_router(close.router)
 api_router.include_router(payments.router)
 api_router.include_router(banking.router)
+api_router.include_router(production.router)
+api_router.include_router(rma.router)
 
 api_router.include_router(
     fastapi_users.get_auth_router(auth_backend),
