@@ -6,7 +6,9 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     ap,
+    ar,
     catalog,
+    close,
     gl,
     health,
     inventory,
@@ -30,6 +32,8 @@ api_router.include_router(shopify_webhooks.router)
 api_router.include_router(gl.router)
 api_router.include_router(procurement.router)
 api_router.include_router(ap.router)
+api_router.include_router(ar.router)
+api_router.include_router(close.router)
 
 api_router.include_router(
     fastapi_users.get_auth_router(auth_backend),

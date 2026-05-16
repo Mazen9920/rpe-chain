@@ -60,6 +60,16 @@ class StockConcurrencyError(AppError):
     code = "stock_concurrency"
 
 
+class PeriodLockedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "period_locked"
+
+
+class AuditFailedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "audit_failed"
+
+
 def install_app_error_handler(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _handle(_: Request, exc: AppError) -> JSONResponse:

@@ -2,6 +2,45 @@
 
 All notable changes documented per release. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), SemVer.
 
+## [0.3.1] — AR · Recognition · Period Close · Financial Reports · 27 Audit Checks · Automation
+
+### Added
+- **Accounts Receivable**: `customer_invoices` + `customer_invoice_lines` (AR# `AR{YYYYMM}{seq:04d}`, type STANDARD/CREDIT_NOTE, status DRAFT/POSTED/PARTIALLY_PAID/PAID/VOID, `posted_journal_id` traceability), `ar_payments` + `ar_payment_applications` (RC# `RC{YYYYMM}{seq:04d}`, method CASH/BANK/PAYMOB/BOSTA_COD/CHEQUE/EFT).
+- **AR service** (`app.services.ar`): `post_invoice` (DR 1100 AR / CR 4010 Revenue + 2050 VAT + 4020 Shipping); `post_invoice_for_shipment` (idempotent via shipment_id; called automatically from `sales.ship` wrapped in `try/except AccountNotFoundError` to remain backwards-compatible with un-seeded test fixtures); `register_payment` (oldest-first auto-application, posts DR cash / CR AR, updates invoice status); `aging_buckets(as_of)` → {current, 1_30, 31_60, 61_90, 90_plus}; `outstanding_total`.
+- **Period Close**: `accounting_periods` (year, month, status OPEN/CLOSING/LOCKED/REOPENED, locked_at, locked_by). `period_close.close(year, month, locked_by)` flips OPEN→CLOSING, runs all 27 audit checks, requires every BLOCKER to pass before flipping to LOCKED; on failure raises `AuditFailedError(409, period_locked stays CLOSING for retry)` with failure details. `period_close.reopen` returns LOCKED→REOPENED→OPEN. `gl.post_journal` calls `_ensure_period_open(event_date)` so a posting into a LOCKED period raises `PeriodLockedError(409)`.
+- **Revenue/Expense Recognition**: `expense_contracts` (ONE_OFF/MONTHLY/PREPAID/ACCRUED, start_date/end_date, total_amount/monthly_amount, debit & credit account codes), `recognition_entries` (UNIQUE (contract_id, period_id), `posted_journal_id`). `recognition.schedule_contract` computes monthly_amount = total/period_months. `recognition.recognize_for_period` is idempotent (returns existing entry if exists; catches IntegrityError on race; skips LOCKED periods; auto-marks COMPLETED at end_date). `recognition.run_monthly_recognition(year, month)` iterates all ACTIVE contracts whose window covers the period.
+- **Financial Reports** (`app.services.reports`): driven entirely off `GLAccount.account_type`, `bs_tag`, `cf_tag` so new accounts update reports automatically.
+  - `pnl(period_start, period_end)` — revenue, COGS, gross_profit, opex, operating_income, net_income.
+  - `balance_sheet(as_of)` — assets, liabilities, equity (incl. computed `retained_earnings` = cumulative REV − EXP), `balanced` flag (Assets == Liabilities + Equity within 0.01).
+  - `cash_flow(period_start, period_end)` — direct-method: finds all journals touching cash accounts (`bs_tag='cash'`), classifies each counter row by `cf_tag` (operating/investing/financing), proportionally allocates cash delta across counter rows.
+- **27 Audit Checks** (`app.services.audit`): registered as `AuditCheck(name, severity, fn)` in `CHECKS` list with `assert len(CHECKS) == 27`. Severities BLOCKER/WARN/INFO. Includes: trial balance balanced, no draft/future/zero-amount/duplicate-numbered journals, AP+AR subledger ties to GL, no negative inventory, no orphan journals, shipments have revenue, supplier/customer invoices posted, recognition complete + balanced, payments not over-applied, cash positive, CoA intact, currency consistency. `run_audits(session, period)` persists `audit_check_results` rows. `list_checks()` exposes the registry via `GET /audits`.
+- **Celery Beat automation** (per master plan: "everything automated as much as we can"):
+  - `monthly-recognition` — `crontab(minute=0, hour=2, day_of_month=1)` runs `run_monthly_recognition_task` for the current month.
+  - `monthly-close-attempt` — `crontab(minute=0, hour=3, day_of_month=5)` runs `attempt_close_previous_month_task` (catches `AuditFailedError` → returns `ok=False` with failure details for ops dashboard).
+  - `daily-audit-snapshot` — `crontab(minute=0, hour=4)` runs `run_audit_snapshot_task` (auto-creates the current month period if missing, runs all 27 checks, persists results — turns "did this break today?" into a queryable timeseries).
+- **API endpoints** (all under `/api/v1`):
+  - `POST /customer-invoices`, `GET /customer-invoices`, `GET /customer-invoices/{id}`
+  - `POST /ar-payments`, `GET /ar-payments`
+  - `GET /ar-aging?as_of=YYYY-MM-DD`
+  - `POST /periods`, `GET /periods`, `GET /periods/{year}/{month}`
+  - `POST /periods/close`, `POST /periods/reopen`
+  - `POST /expense-contracts`, `GET /expense-contracts`
+  - `POST /recognition/run` (per-contract or all-ACTIVE)
+  - `GET /reports/pnl?period_start=…&period_end=…`
+  - `GET /reports/balance-sheet?as_of=…`
+  - `GET /reports/cash-flow?period_start=…&period_end=…`
+  - `GET /audits` (registry), `GET /audits/results?year=&month=`
+- **Schemas** (`app.schemas.v3_1`): Pydantic v2 camelCase via `_Camel` base; AR aging exposes `current`, `1_30`, `31_60`, `61_90`, `90_plus` as Field aliases.
+- **Migration `0005_recognition_close_ar`**: 7 new tables (accounting_periods, expense_contracts, recognition_entries, audit_check_results, customer_invoices, customer_invoice_lines, ar_payments, ar_payment_applications) with FKs/UNIQUE/CHECK constraints.
+- **Tests**: +8 — `test_close_v031.py` covers period creation, blocked posting into locked period, AR invoice post + payment auto-application, aging buckets, recognition idempotency, audit registry size = 27, deliberate broken state → `AuditFailedError(409)`, balance sheet balanced flag. **70/70 tests pass.**
+
+### Acceptance (master plan §199-202)
+- `GET /audits` returns all 27 named checks with severity. ✓
+- Deliberately broken state (future-dated journal) makes `POST /periods/close` raise `AuditFailedError(409, code="audit_failed")` with full failure list; period stays in CLOSING so user can fix and retry. ✓
+- P&L/BS/CF reports run off `bs_tag`/`cf_tag` (zero hard-coded account codes in reports.py). ✓
+- Posting into a LOCKED period raises `PeriodLockedError(409, code="period_locked")`. ✓
+- Celery Beat schedule wired (monthly recognition day 1 / monthly close attempt day 5 / daily audit snapshot). ✓
+
 ## [0.3.0] — GL · FX · Procurement · AP
 
 ### Added

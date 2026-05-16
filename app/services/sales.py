@@ -293,6 +293,16 @@ async def ship(
         event_date=today,
         currency=order.currency,
     )
+    # Auto-post AR invoice on dispatch (DR AR / CR Revenue). If the chart of
+    # accounts isn't seeded (older test fixtures), skip silently — same pattern
+    # as cogs.post_for_shipment.
+    from app.services import ar as ar_svc
+    from app.services.gl import AccountNotFoundError
+
+    try:
+        await ar_svc.post_invoice_for_shipment(session, shipment=shipment, invoice_date=today)
+    except AccountNotFoundError:
+        pass
     # Outbox: shipment.dispatched → fulfillments.create for Shopify-sourced orders
     if order.source == SalesOrderSource.SHOPIFY:
         from app.services import shopify_outbound

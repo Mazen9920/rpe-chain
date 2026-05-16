@@ -20,8 +20,9 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.errors import AppError, NotFoundError
+from app.errors import AppError, NotFoundError, PeriodLockedError
 from app.models.accounting import PendingJournalEntry, PendingJournalLine, PendingJournalStatus
+from app.models.close import AccountingPeriod, PeriodStatus
 from app.models.gl import (
     AccountType,
     GLAccount,
@@ -79,6 +80,20 @@ async def _next_journal_number(session: AsyncSession, event_date: date) -> str:
     return f"{prefix}{seq:05d}"
 
 
+async def _ensure_period_open(session: AsyncSession, event_date: date) -> None:
+    """Raise PeriodLockedError if the target period is LOCKED."""
+    stmt = select(AccountingPeriod).where(
+        AccountingPeriod.year == event_date.year,
+        AccountingPeriod.month == event_date.month,
+    )
+    period = (await session.execute(stmt)).scalar_one_or_none()
+    if period is not None and period.status == PeriodStatus.LOCKED:
+        raise PeriodLockedError(
+            f"Accounting period {event_date.year}-{event_date.month:02d} is locked",
+            details={"year": event_date.year, "month": event_date.month},
+        )
+
+
 async def post_journal(
     session: AsyncSession,
     *,
@@ -91,6 +106,8 @@ async def post_journal(
     """Create + post a balanced GLJournal. Σdebit == Σcredit per currency."""
     if not lines:
         raise UnbalancedJournalError("Journal has no lines")
+
+    await _ensure_period_open(session, event_date)
 
     # validate balance per currency
     sums_by_ccy: dict[str, tuple[Decimal, Decimal]] = defaultdict(lambda: (ZERO, ZERO))

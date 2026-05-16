@@ -19,7 +19,7 @@ async def test_openapi_served(client: AsyncClient) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["info"]["title"] == "RPE Gear"
-    assert body["info"]["version"] == "0.3.0"
+    assert body["info"]["version"] == "0.3.1"
 
 
 @pytest.mark.asyncio
