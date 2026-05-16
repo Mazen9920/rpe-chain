@@ -2,6 +2,28 @@
 
 All notable changes documented per release. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), SemVer.
 
+## [0.1.1] — Standard-Cost Engine
+
+### Added
+- `products` catalog stub with `ProductType` enum (RAW / PACKAGING / FINISHED / BUNDLE) — only fields the costing engine needs; full catalog deferred to v0.2.0.
+- Bill of Materials: `bill_of_materials` (versioned, soft-archive via `archived_at`) and `bom_lines` (qty_per `Decimal(12,4)`, scrap_factor_pct `Decimal(5,4)` stored as fraction).
+- Monthly cost inputs: `rm_cost_months` (with `fx_rate` and `currency` for non-EGP RMs), `mfg_fee_months`, `other_cost_months` (PACKAGING / LABOR / OVERHEAD / OTHER). Each row is independently lockable via `is_locked`.
+- `standard_costs` snapshot table: per-product, per-month `unit_cost`, `rm_subtotal`, `mfg_fee`, `other_subtotal`, `status`, `is_locked`, `computed_at`, `missing_inputs` (JSON), `breakdown` (JSON).
+- `costing_settings` singleton (row id=1, check-constrained) with `cutover_date`, `stale_after_days`, `default_currency`.
+- **Standard-cost engine** (`app.services.standard_cost`): deterministic `Decimal` rollup with `ROUND_HALF_EVEN` quantisation to 4dp. BOM walk is recursive with cycle detection (`BomCycleError`, 409). Scrap math: `effective_qty = qty_per * (1 + scrap_factor_pct)`. Topo-sorted batch recompute via `recompute_all_for_month`.
+- Status precedence: `MISSING_RM_PRICES > MISSING_MFG_FEE > STALE > LOCKED > OK`. `mark_stale_if_needed` flips OK rows older than `stale_after_days` to `STALE`.
+- `get_cost_for_cogs(product_id, when)` — selector for v0.2.0 COGS posting; walks back ≤12 months looking for an `OK` or `LOCKED` row, returns `Decimal` or `None`.
+- `lock_month` (idempotent, sets `status=LOCKED` on locked std rows) and `unlock_month(force, actor_id)` (refuses before cutover unless `force=True`).
+- API routes under `/api/v1/`: `GET/PUT /rm-costs`, `/mfg-fees`, `/other-costs`; `GET /standard-costs`, `GET /standard-costs/{product_id}/{month}`, `POST /standard-costs/recompute`, `POST /standard-costs/lock`, `POST /standard-costs/unlock`; `GET/PUT /costing-settings`. Mutating routes require superuser; PUTs against locked rows return `409 month_locked`.
+- Celery task `rpe_gear.standard_cost.recompute_month(month_iso)` for offline batch recompute.
+- Idempotent `scripts/seed.py` seeds CostingSettings + F8-V2 demo BOM with Jan-2026 inputs (unit cost = **EGP 88.30**).
+- 13 service tests (Decimal math, all 5 statuses, idempotency, lock 409, cycle detection, COGS selector walk-back, scrap math, topo recompute) + 3 API tests (auth, superuser guard, lock 409 round-trip). Engine coverage: **97%**.
+
+### Engineering invariants (reinforced)
+- All arithmetic stays in `Decimal`; floats rejected at the Pydantic boundary.
+- Cross-DB-compatible model definitions: `sa.Uuid`, `sa.JSON`, `SQLEnum(..., native_enum=False)` — in-memory SQLite tests pass without a Postgres backend.
+- Status writes are atomic per-product per-month via unique constraint upserts.
+
 ## [0.1.0] — Platform Skeleton (in progress)
 
 ### Added

@@ -12,6 +12,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware, install_error_handlers
+from app.errors import install_app_error_handler
 
 
 def create_app() -> FastAPI:
@@ -27,7 +28,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="RPE Gear",
-        version="0.1.0",
+        version="0.1.1",
         description="RPE supply OS — Python rewrite",
         lifespan=lifespan,
     )
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
 
     install_error_handlers(app)
+    install_app_error_handler(app)
 
     app.include_router(api_router, prefix="/api/v1")
 
