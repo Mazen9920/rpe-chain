@@ -2,6 +2,50 @@
 
 All notable changes documented per release. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), SemVer.
 
+## [0.4.0] — Cash-in Reconciliation: Paymob · Bosta COD · Bank · Chargebacks (Phase A of v0.4.0 split)
+
+> This is **Phase A** of the original v0.4.0 master-plan ticket. Phase B (production-order MRP + RMA/returns) is now scheduled for v0.4.1. The split keeps each release small enough to ship + verify in isolation while preserving the cash-side automation theme.
+
+### Added
+- **Models** (`app.models.payments`): `paymob_transactions` (external_id UNIQUE, status CAPTURED/SETTLED/REFUNDED/CHARGEBACK/VOIDED, payment_method CARD/WALLET/INSTALLMENTS/KIOSK/OTHER, gross/fees/net Numeric(18,4), settlement_ref + posted_journal_id traceability, raw_payload JSON); `cod_ledger` (tracking_id UNIQUE, status PENDING/IN_TRANSIT/DELIVERED_UNREMITTED/DELIVERED_REMITTED/RETURNED/VOIDED, shipped_at/delivered_at/remitted_at, remittance_ref); `bank_accounts` + `bank_transactions` (status UNMATCHED/MATCHED/IGNORED, signed amount, UNIQUE(bank_account_id, external_ref), matched_type AP_PAYMENT/AR_PAYMENT/PAYMOB_SETTLEMENT/BOSTA_REMITTANCE/MANUAL); `chargebacks` (status OPEN/WON/LOST/CANCELLED, FK paymob_transactions RESTRICT, raised_journal_id + resolved_journal_id).
+- **Integrations**:
+  - `app.integrations.paymob.client.PaymobClient` (httpx.AsyncClient, JWT auth via `/auth/tokens`, `list_transactions`, `get_transaction`).
+  - `app.integrations.paymob.settlement_csv.parse_settlement_csv` — Paymob CSV statement parser with header aliases (transaction_id/txn_id, amount/amount_egp, fees/processing_fee, net auto-computed if absent, captured_at/settled_at multi-format datetime).
+  - `app.integrations.bosta.client.BostaClient` (raw API-key header per Bosta convention, `list_deliveries`, `get_delivery`).
+  - `app.integrations.bosta.remittance_csv.parse_remittance_csv` — Bosta remittance CSV parser (tracking_number/awb/awb aliases, cod/cod_amount, batch/statement_ref).
+- **Services**:
+  - `app.services.paymob_recon.ingest_settlement_rows` — upsert by external_id; on SETTLED transition posts **DR 1020 Bank (net) + DR 7010 Gateway Fees (fees) / CR 1110 AR-Paymob (gross)**; idempotent via `posted_journal_id`. `ar_paymob_outstanding` for acceptance test.
+  - `app.services.cod_ledger.record_shipment` — DR 1120 AR-Bosta / CR 1100 AR (sub-ledger transfer). `apply_remittance_rows` — DR 1020 Bank / CR 1120 AR-Bosta per delivered tracking_id (delivery fees DR 6140). `mark_delivered`, `mark_returned`, `mark_voided`, `void_rate(window_days)` for COD health monitoring.
+  - `app.services.bank_recon.import_statement` (dedupes by `(bank_account_id, external_ref)`). `auto_match_unmatched` — matches Paymob settlement batches (settlement_ref substring + Σnet equality) and Bosta remittances (remittance_ref substring + Σcod equality) without posting duplicate GL.
+  - `app.services.chargebacks.raise_chargeback` — DR 1130 AR-Chargeback / CR Bank-or-AR-Paymob (depending on settled state); flips PaymobTransaction.status → CHARGEBACK. `resolve_chargeback` — WON: DR Bank / CR 1130; LOST: DR 7010 Gateway Fees / CR 1130; CANCELLED: reverse the raise.
+- **Celery Beat automation** (extends v0.3.1 theme):
+  - `daily-paymob-recon` — `crontab(minute=0, hour=6)` pulls Paymob `/acceptance/transactions` and posts settlement journals.
+  - `daily-bosta-status-sync` — `crontab(minute=0, hour=7)` syncs delivery state into COD ledger (transient API errors swallowed per record).
+  - `daily-cod-void-rate-check` — `crontab(minute=30, hour=7)` alerts when COD void rate exceeds 10% over last 30 days.
+  - `daily-bank-auto-match` — `crontab(minute=0, hour=8)` runs `auto_match_unmatched`.
+- **API endpoints** (under `/api/v1`):
+  - `POST /paymob/settlements/import` (multipart CSV), `GET /paymob/transactions`.
+  - `POST /cod/shipments`, `POST /cod/shipments/{tracking_id}/deliver`, `POST /cod/remittances/import`, `GET /cod/entries`, `GET /cod/void-rate`.
+  - `POST /banking/accounts`, `GET /banking/accounts`, `POST /banking/statements/import`, `GET /banking/accounts/{id}/transactions`, `POST /banking/auto-match`.
+  - `POST /chargebacks`, `POST /chargebacks/{id}/resolve`, `GET /chargebacks`.
+- **Schemas** (`app.schemas.v4`): `_CamelBase` (alias_generator=to_camel, populate_by_name, from_attributes) for all new request/response types.
+- **Config**: `paymob_api_key`, `bosta_api_key` (env-driven, empty default; clients return `{skipped: true, reason: "no_api_key"}` when absent so dev/staging don't fail).
+- **Errors**: `ReconciliationError`, `ChargebackError`, `CODVoidRateAlert` (all 409).
+- **Tests**: 20 new tests across `test_paymob_recon.py`, `test_cod_ledger.py`, `test_bank_recon.py`, `test_chargebacks.py`. Includes the master-plan **§223 acceptance test**: 100 Paymob captures → settle → reconcile → assert `1110 AR-Paymob` outstanding == 0.
+
+### Migrations
+- `0006_paymob_bosta_bank_chargebacks` — 5 new tables with full FK/CHECK/UNIQUE/indexes.
+
+### Quality gates
+- 90/90 tests pass (70 from v0.3.x + 20 new).
+- `ruff check`, `ruff format`, `mypy --strict` all clean.
+
+### Deferred to v0.4.1 (Phase B)
+- Production orders (BOM explosion, work centers, capacity, MO statuses, WIP accounting).
+- RMA / returns processing.
+
+---
+
 ## [0.3.1] — AR · Recognition · Period Close · Financial Reports · 27 Audit Checks · Automation
 
 ### Added

@@ -53,4 +53,29 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour=4),
         "args": (),
     },
+    # v0.4.0 cash-in reconciliation:
+    # Daily 06:00 UTC — pull Paymob settlements and post journals.
+    "daily-paymob-recon": {
+        "task": "rpe_gear.paymob.recon_daily",
+        "schedule": crontab(minute=0, hour=6),
+        "args": (),
+    },
+    # Daily 07:00 UTC — sync Bosta delivery status.
+    "daily-bosta-status-sync": {
+        "task": "rpe_gear.bosta.sync_status",
+        "schedule": crontab(minute=0, hour=7),
+        "args": (),
+    },
+    # Daily 07:30 UTC — alert if COD void rate > 10% over last 30 days.
+    "daily-cod-void-rate-check": {
+        "task": "rpe_gear.bosta.void_rate_check",
+        "schedule": crontab(minute=30, hour=7),
+        "args": (),
+    },
+    # Daily 08:00 UTC — auto-match bank statement lines.
+    "daily-bank-auto-match": {
+        "task": "rpe_gear.bank.auto_match",
+        "schedule": crontab(minute=0, hour=8),
+        "args": (),
+    },
 }

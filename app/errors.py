@@ -70,6 +70,21 @@ class AuditFailedError(AppError):
     code = "audit_failed"
 
 
+class ReconciliationError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "reconciliation_error"
+
+
+class ChargebackError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "chargeback_error"
+
+
+class CODVoidRateAlert(AppError):  # noqa: N818 — domain term, not an exception suffix
+    status_code = status.HTTP_409_CONFLICT
+    code = "cod_void_rate_alert"
+
+
 def install_app_error_handler(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _handle(_: Request, exc: AppError) -> JSONResponse:

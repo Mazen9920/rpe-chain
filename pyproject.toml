@@ -1,6 +1,6 @@
 [project]
 name = "rpe-gear"
-version = "0.3.1"
+version = "0.4.0"
 description = "RPE Gear supply OS — Python rewrite per PDF v2.0 spec"
 readme = "README.md"
 requires-python = ">=3.12"

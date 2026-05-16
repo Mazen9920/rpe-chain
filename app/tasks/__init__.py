@@ -110,3 +110,146 @@ def run_audit_snapshot_task() -> dict[str, Any]:
             }
 
     return asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# v0.4.0 cash-in reconciliation tasks
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(name="rpe_gear.paymob.recon_daily")  # type: ignore[untyped-decorator]
+def paymob_recon_daily_task() -> dict[str, Any]:
+    """Pull recent Paymob transactions and post settlement journals."""
+    from decimal import Decimal
+
+    from app.integrations.paymob.client import PaymobClient
+    from app.integrations.paymob.settlement_csv import PaymobSettlementRow
+    from app.services.paymob_recon import ingest_settlement_rows
+
+    async def _run() -> dict[str, Any]:
+        client = PaymobClient()
+        if not client.api_key:
+            return {"skipped": True, "reason": "no_api_key"}
+        raw = await client.list_transactions(page=1, page_size=200)
+        from datetime import datetime
+
+        rows: list[PaymobSettlementRow] = []
+        for r in raw:
+            try:
+                external_id = str(r.get("id") or r.get("transaction_id") or "")
+                if not external_id:
+                    continue
+                amt = Decimal(str(r.get("amount_cents", 0))) / Decimal("100")
+                fees = Decimal(str(r.get("fees_cents", 0))) / Decimal("100")
+                rows.append(
+                    PaymobSettlementRow(
+                        external_id=external_id,
+                        order_external_id=str(r.get("order", {}).get("id", "")) or None,
+                        amount_gross=amt,
+                        fees=fees,
+                        amount_net=amt - fees,
+                        currency=str(r.get("currency", "EGP")),
+                        captured_at=datetime.fromisoformat(
+                            str(r.get("created_at", datetime.utcnow().isoformat())).replace(
+                                "Z", "+00:00"
+                            )
+                        ),
+                        settled_at=None,
+                        settlement_ref=None,
+                        payment_method=str(r.get("source_data", {}).get("type", "")),
+                        status="SETTLED" if r.get("is_settled") else "CAPTURED",
+                        raw=r,
+                    )
+                )
+            except (ValueError, KeyError, TypeError):
+                continue
+
+        async with SessionLocal() as session:
+            report = await ingest_settlement_rows(session, rows)
+            await session.commit()
+            return report
+
+    return asyncio.run(_run())
+
+
+@celery_app.task(name="rpe_gear.bosta.sync_status")  # type: ignore[untyped-decorator]
+def bosta_sync_status_task() -> dict[str, Any]:
+    """Sync Bosta delivery statuses to local COD ledger."""
+    from sqlalchemy import select
+
+    from app.integrations.bosta.client import BostaClient
+    from app.models.payments import CODLedgerEntry, CODStatus
+    from app.services.cod_ledger import mark_delivered, mark_returned
+
+    async def _run() -> dict[str, Any]:
+        client = BostaClient()
+        if not client.api_key:
+            return {"skipped": True, "reason": "no_api_key"}
+
+        async with SessionLocal() as session:
+            in_flight = list(
+                (
+                    await session.execute(
+                        select(CODLedgerEntry).where(
+                            CODLedgerEntry.status.in_([CODStatus.IN_TRANSIT, CODStatus.PENDING])
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            delivered = 0
+            returned = 0
+            for entry in in_flight:
+                try:
+                    payload = await client.get_delivery(entry.tracking_id)
+                except Exception:  # noqa: S112
+                    continue
+                state = str(payload.get("state", {}).get("value", "")).upper()
+                if state in ("DELIVERED", "RECEIVED"):
+                    await mark_delivered(session, tracking_id=entry.tracking_id)
+                    delivered += 1
+                elif state in ("RETURNED", "CANCELLED", "TERMINATED"):
+                    try:
+                        await mark_returned(session, tracking_id=entry.tracking_id)
+                        returned += 1
+                    except Exception:  # noqa: S110
+                        pass
+            await session.commit()
+            return {"scanned": len(in_flight), "delivered": delivered, "returned": returned}
+
+    return asyncio.run(_run())
+
+
+@celery_app.task(name="rpe_gear.bosta.void_rate_check")  # type: ignore[untyped-decorator]
+def bosta_void_rate_check_task(threshold: str = "0.10") -> dict[str, Any]:
+    """Alert if COD void rate over last 30 days exceeds threshold."""
+    from decimal import Decimal
+
+    from app.services.cod_ledger import void_rate
+
+    async def _run() -> dict[str, Any]:
+        async with SessionLocal() as session:
+            rate = await void_rate(session, window_days=30)
+            t = Decimal(threshold)
+            return {
+                "void_rate": str(rate),
+                "threshold": str(t),
+                "alert": rate > t,
+            }
+
+    return asyncio.run(_run())
+
+
+@celery_app.task(name="rpe_gear.bank.auto_match")  # type: ignore[untyped-decorator]
+def bank_auto_match_task() -> dict[str, Any]:
+    """Auto-match unmatched bank statement lines to Paymob/Bosta sub-ledgers."""
+    from app.services.bank_recon import auto_match_unmatched
+
+    async def _run() -> dict[str, Any]:
+        async with SessionLocal() as session:
+            report = await auto_match_unmatched(session)
+            await session.commit()
+            return report
+
+    return asyncio.run(_run())

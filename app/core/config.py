@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     shopify_access_token: str = ""
     shopify_webhook_secret: str = ""
 
+    # Paymob integration (v0.4.0)
+    paymob_api_key: str = ""
+
+    # Bosta integration (v0.4.0)
+    bosta_api_key: str = ""
+
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def cors_origins_list(self) -> list[str]:
